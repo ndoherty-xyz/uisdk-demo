@@ -618,3 +618,48 @@ td[data-highlight] {
     transition: none;
   }
 }
+
+/* Ghost cursor ---------- */
+
+.ghost-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease-out;
+}
+
+.ghost-cursor[data-visible] {
+  opacity: 1;
+}
+
+.ghost-cursor-arrow {
+  fill: var(--agent);
+  stroke: white;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.3));
+  transform-origin: 1px 1px;
+}
+
+.ghost-cursor-tag {
+  margin-top: 16px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--agent);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghost-cursor {
+    transition: none;
+  }
+}

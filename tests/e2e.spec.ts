@@ -205,3 +205,34 @@ test("changing two rows the same way by hand offers a ready recipe for the rest"
   await expect(bar).toContainText("Change one row once");
   expect(requests).toHaveLength(1);
 });
+
+test("the ghost cursor visits each control before its change, then hides", async ({ page }) => {
+  await recordMayaAndMakeRecipe(page);
+  const cursor = page.locator(".ghost-cursor");
+  await expect(cursor).toHaveCSS("opacity", "0");
+  await page.locator(".agent-bar").getByRole("button", { name: "Run on 4 more" }).click();
+
+  // Jonah's Role is the first change; the cursor lands on its trigger before it flips to Editor.
+  await expect(cursor).toHaveAttribute("data-visible");
+  const jonahRole = page.locator('tr[data-member-id="jonah"] [data-slot="select-trigger"]').first();
+  await expect
+    .poll(async () => {
+      const [cursorBox, roleBox] = [await cursor.boundingBox(), await jonahRole.boundingBox()];
+      return Math.hypot(
+        cursorBox!.x - (roleBox!.x + roleBox!.width / 2),
+        cursorBox!.y - (roleBox!.y + roleBox!.height / 2),
+      );
+    })
+    .toBeLessThan(3);
+
+  await expect(page.locator(".agent-bar")).toContainText("Updated 4 people.", { timeout: 15_000 });
+  await expect(cursor).not.toHaveAttribute("data-visible", { timeout: 3000 });
+});
+
+test("with reduced motion the cursor jumps and the run still finishes", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await recordMayaAndMakeRecipe(page);
+  await page.locator(".agent-bar").getByRole("button", { name: "Run on 4 more" }).click();
+  await expect(page.locator(".agent-bar")).toContainText("Updated 4 people.", { timeout: 15_000 });
+  expect(await page.locator(".ghost-cursor").evaluate((cursor) => cursor.getAnimations().length)).toBe(0);
+});

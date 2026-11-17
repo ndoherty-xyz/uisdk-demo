@@ -8,6 +8,7 @@ import type { Recording } from "../record/recording";
 import { useNudge } from "../record/useNudge";
 import { useRecorder } from "../record/useRecorder";
 import { findRunTargets, useRunner } from "../run/useRunner";
+import { GhostCursor } from "./GhostCursor";
 import { ToastStack } from "./ToastStack";
 import { format } from "./format";
 import { RecipeCard } from "./RecipeCard";
@@ -98,6 +99,7 @@ function AgentBar() {
 
   return (
     <>
+      <GhostCursor />
       <ToastStack turns={runTurns} onClear={clearRunTurns} />
       <div className="agent-dock" data-agent-hidden>
         {isCardShowing && state.phase === "recorded" && (

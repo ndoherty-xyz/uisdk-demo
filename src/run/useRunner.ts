@@ -6,6 +6,7 @@ import { readSettingsWithoutPreview, revertPreview } from "../preview/usePreview
 import { changesFor, matches } from "../recipe/evaluate";
 import { plan } from "../recipe/plan";
 import type { Recipe } from "../recipe/schema";
+import { hideGhostCursor, moveGhostCursor } from "../ui/GhostCursor";
 
 /** Pause after each change so it's readable. */
 const stepPauseMs = 180;
@@ -64,6 +65,7 @@ function useRunner() {
       // Fresh snapshot per row, so refs and current values are never stale.
       for (const step of plan(recipe, member, agent.snapshot(), memberIdOfRef)) {
         if (stopRequested.current) break;
+        if (step.ref) await moveGhostCursor(step.ref);
         const result =
           step.ref && (await agent.act({ steps: [{ ref: step.ref, action: step.action, args: step.args }] }));
         if (!result || !result.ok) failedStepCount++;
@@ -78,6 +80,7 @@ function useRunner() {
       setRunTurns((turns) => [...turns, { member, entries: turnEntries }]);
     }
 
+    hideGhostCursor();
     setRunState({ phase: "finished", changedCount, failedStepCount, stopped: stopRequested.current });
   }
 
