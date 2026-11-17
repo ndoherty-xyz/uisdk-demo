@@ -1,5 +1,5 @@
 import { fields } from "../src/data/fields";
-import { attributeValueCounts, memberById, members } from "../src/data/members";
+import { attributeValueCounts, initialSettingsByMember, memberById, members } from "../src/data/members";
 import { matches, stepsFor } from "../src/recipe/evaluate";
 import type { Recipe, RecipeRequest } from "../src/recipe/schema";
 import { defaultModel, proposeRecipe, type RecipeCallResult } from "../server/model";
@@ -33,7 +33,8 @@ function requestFor(fixture: Fixture): Omit<RecipeRequest, "model"> {
  */
 function effectOf(recipe: Pick<Recipe, "filter" | "steps">): string[] {
   return members.map((member) => {
-    const steps = matches(recipe, member) ? stepsFor(recipe, member) : [];
+    const settings = initialSettingsByMember.get(member.id)!;
+    const steps = matches(recipe, member, settings) ? stepsFor(recipe, member, settings) : [];
     const values = steps.map((step) => `${step.field}=${step.value}`).sort();
     return `${member.id}: ${values.join(" ") || "-"}`;
   });

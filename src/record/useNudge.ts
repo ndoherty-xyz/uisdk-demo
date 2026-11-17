@@ -1,17 +1,19 @@
+import type { HistoryEntry } from "@ui-sdk/react/history";
 import { useEffect, useRef, useState } from "react";
 import { entryTimes, history, memberIdOfEntry } from "../bridge";
+import { readSettings } from "../data/settingsStore";
 import { requestRecipe } from "../recipe/requestRecipe";
 import type { Recipe } from "../recipe/schema";
 import { findRepeatedChange, type Recording } from "./recording";
 
-/** Wait this long after the person's last change, so a row being edited is finished first. */
-const detectDelayMs = 2000;
+/** Wait this long after the person's last change, in case they're still editing that row. */
+const detectDelayMs = 800;
 
 /** Two rows changed the same way by hand, with a recipe already made from them. */
 type Nudge = { examples: [Recording, Recording]; recipe: Recipe };
 
 /**
- * Function to watch for the person making the same change set on two rows by hand and, once
+ * Function to watch for the person leaving two rows in the same end state by hand and, once
  * found, make a recipe from both in the background so the offer arrives ready. Each change set is
  * offered at most once per session.
  * @param isWatching Whether the bar is idle, so a nudge could show.
@@ -28,24 +30,39 @@ function useNudge(isWatching: boolean, model: string) {
     let detectTimer: ReturnType<typeof setTimeout> | undefined;
     // A recipe that arrives after the person started something else is dropped, not shown later.
     let isCancelled = false;
+    /**
+     * Function to look for a repeated change and, if there is one, make its recipe.
+     * @param entries The history entries to look in, oldest first.
+     */
+    async function detectRepeatedChange(entries: HistoryEntry[]) {
+      const repeated = findRepeatedChange(
+        entries,
+        (entryId) => entryTimes.get(entryId)!,
+        memberIdOfEntry,
+        readSettings,
+        offeredKeys.current,
+      );
+      if (!repeated) return;
+      offeredKeys.current.add(repeated.key);
+      setSpottedExamples(repeated.recordings);
+      const result = await requestRecipe(repeated.recordings, "", model);
+      if (isCancelled) return;
+      setSpottedExamples(null);
+      if ("recipe" in result) setNudge({ examples: repeated.recordings, recipe: result.recipe });
+    }
+
     const unsubscribe = history.subscribe(() => {
-      if (history.entries().at(-1)?.source === "agent") return;
+      const entries = history.entries().slice(0, history.position());
+      const latestEntry = entries.at(-1);
+      if (!latestEntry || latestEntry.source === "agent") return;
       clearTimeout(detectTimer);
-      detectTimer = setTimeout(async () => {
-        const repeated = findRepeatedChange(
-          history.entries().slice(0, history.position()),
-          (entryId) => entryTimes.get(entryId)!,
-          memberIdOfEntry,
-          offeredKeys.current,
-        );
-        if (!repeated) return;
-        offeredKeys.current.add(repeated.key);
-        setSpottedExamples(repeated.recordings);
-        const result = await requestRecipe(repeated.recordings, "", model);
-        if (isCancelled) return;
-        setSpottedExamples(null);
-        if ("recipe" in result) setNudge({ examples: repeated.recordings, recipe: result.recipe });
-      }, detectDelayMs);
+      // Moving on to another row finishes the last one, so check now, leaving out the row just started.
+      const latestMemberId = memberIdOfEntry(latestEntry);
+      const previousEntry = entries.at(-2);
+      if (previousEntry && memberIdOfEntry(previousEntry) !== latestMemberId) {
+        detectRepeatedChange(entries.filter((entry) => memberIdOfEntry(entry) !== latestMemberId));
+      }
+      detectTimer = setTimeout(() => detectRepeatedChange(entries), detectDelayMs);
     });
     return () => {
       isCancelled = true;

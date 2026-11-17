@@ -1,5 +1,6 @@
 import type { HistoryEntry } from "@ui-sdk/react/history";
 import { describe, expect, it } from "vitest";
+import type { Settings } from "../src/data/fields";
 import { findRepeatedChange, groupPersonEntriesByMember, recordingFromEntries } from "../src/record/recording";
 
 const memberIdByRef: Record<string, string> = {
@@ -79,25 +80,82 @@ describe("findRepeatedChange", () => {
     entry({ id: "j2", ref: "c5", label: "Role", value: "editor", previous: "admin" }),
   ];
   const secondsApart = (entryId: string) => [...mayaEntries, ...jonahEntries].findIndex((e) => e.id === entryId) * 1000;
+  // Both rows' end state after the entries above.
+  const endSettings: Record<string, Settings> = {
+    maya: { role: "editor", seat: "full", deployAlerts: true, weeklyDigest: true },
+    jonah: { role: "editor", seat: "full", deployAlerts: false, weeklyDigest: true },
+  };
+  const settingsOf = (memberId: string) => endSettings[memberId]!;
 
   it("matches two rows given the same values in any order, oldest first", () => {
-    const repeated = findRepeatedChange([...mayaEntries, ...jonahEntries], secondsApart, memberIdOf, new Set());
+    const repeated = findRepeatedChange(
+      [...mayaEntries, ...jonahEntries],
+      secondsApart,
+      memberIdOf,
+      settingsOf,
+      new Set(),
+    );
     expect(repeated?.key).toBe('role="editor" weeklyDigest=true');
     expect(repeated?.recordings.map((recording) => recording.memberId)).toEqual(["maya", "jonah"]);
   });
 
   it("skips change sets already offered", () => {
     const offered = new Set(['role="editor" weeklyDigest=true']);
-    expect(findRepeatedChange([...mayaEntries, ...jonahEntries], secondsApart, memberIdOf, offered)).toBeUndefined();
+    expect(
+      findRepeatedChange([...mayaEntries, ...jonahEntries], secondsApart, memberIdOf, settingsOf, offered),
+    ).toBeUndefined();
   });
 
-  it("only counts each row's latest burst", () => {
+  it("only counts each row's latest burst as its changes", () => {
+    // Maya was made an editor a minute before her digest; that's part of her end state, not her change.
     const minutesApart = (entryId: string) => (entryId === "m2" ? 60_000 : secondsApart(entryId));
-    expect(findRepeatedChange([...mayaEntries, ...jonahEntries], minutesApart, memberIdOf, new Set())).toBeUndefined();
+    const repeated = findRepeatedChange(
+      [...mayaEntries, ...jonahEntries],
+      minutesApart,
+      memberIdOf,
+      settingsOf,
+      new Set(),
+    );
+    expect(repeated?.recordings.map((recording) => recording.memberId)).toEqual(["jonah", "maya"]);
+    expect(repeated?.recordings[1].changes).toEqual([
+      { field: "role", from: "editor", to: "editor" },
+      { field: "weeklyDigest", from: false, to: true },
+    ]);
   });
 
   it("matches a single field", () => {
     const oneField = [mayaEntries[0]!, jonahEntries[1]!];
-    expect(findRepeatedChange(oneField, secondsApart, memberIdOf, new Set())?.key).toBe('role="editor"');
+    expect(findRepeatedChange(oneField, secondsApart, memberIdOf, settingsOf, new Set())?.key).toBe('role="editor"');
+  });
+
+  it("matches rows that end the same when one already had part of the change", () => {
+    // Maya already had weekly digest on; Jonah was given it.
+    const repeated = findRepeatedChange(
+      [mayaEntries[0]!, ...jonahEntries],
+      secondsApart,
+      memberIdOf,
+      settingsOf,
+      new Set(),
+    );
+    expect(repeated?.key).toBe('role="editor" weeklyDigest=true');
+    expect(repeated?.recordings[0].changes).toEqual([
+      { field: "role", from: "viewer", to: "editor" },
+      { field: "weeklyDigest", from: true, to: true },
+    ]);
+  });
+
+  it("doesn't match rows that end differently on a changed field", () => {
+    const differentEnd: Record<string, Settings> = {
+      ...endSettings,
+      maya: { ...endSettings.maya!, weeklyDigest: false },
+    };
+    const repeated = findRepeatedChange(
+      [mayaEntries[0]!, ...jonahEntries],
+      secondsApart,
+      memberIdOf,
+      (memberId) => differentEnd[memberId]!,
+      new Set(),
+    );
+    expect(repeated).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 import { elementOf } from "@ui-sdk/react/observe";
+import agentAvatarUrl from "../assets/agent.png";
 
 const pressMs = 120;
 const hideDelayMs = 1500;
@@ -14,17 +15,19 @@ let hideTimer: ReturnType<typeof setTimeout> | undefined;
  * Function to move the ghost cursor to a control's center and press it, ready for the agent's change.
  * Jumps without animating when the person prefers reduced motion.
  * @param ref The control's ref.
+ * @param glideMs How long the move takes.
  * @returns When the cursor has landed.
  */
-async function moveGhostCursor(ref: string): Promise<void> {
+async function moveGhostCursor(ref: string, glideMs: number): Promise<void> {
   const cursor = cursorElement!;
   // A select's element is its visually hidden label, so aim at the visible control in its cell.
   const control = elementOf(ref).closest("td")!.querySelector('[data-slot="select-trigger"], [data-slot="switch"]')!;
   control.scrollIntoView({ block: "nearest" });
   const rect = control.getBoundingClientRect();
   const target = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  // The first move of a run starts from the agent bar.
-  const start = cursorPoint ?? { x: window.innerWidth / 2, y: window.innerHeight - 48 };
+  // The first move of a run starts from the agent panel's edge.
+  const panelRect = document.querySelector(".agent-panel")!.getBoundingClientRect();
+  const start = cursorPoint ?? { x: panelRect.left, y: panelRect.top + 160 };
   cursorPoint = target;
 
   clearTimeout(hideTimer);
@@ -34,18 +37,33 @@ async function moveGhostCursor(ref: string): Promise<void> {
     cursor.style.transform = toTransform;
     return;
   }
-  const distance = Math.hypot(target.x - start.x, target.y - start.y);
   await cursor.animate([{ transform: `translate(${start.x}px, ${start.y}px)` }, { transform: toTransform }], {
-    duration: Math.min(500, 350 + distance / 4),
+    duration: glideMs,
     easing: "cubic-bezier(0.22, 1, 0.36, 1)",
   }).finished;
   cursor.style.transform = toTransform;
+  // Only unhurried moves press; quick ones just point.
+  if (glideMs < pressMs * 2) return;
   await cursor
     .querySelector(".ghost-cursor-arrow")!
     .animate([{ scale: 1 }, { scale: 0.9 }, { scale: 1 }], { duration: pressMs, easing: "ease-out" }).finished;
 }
 
-/** Function to hide the ghost cursor a moment after a run ends; the next run starts from the bar. */
+/**
+ * Function to tint a control's cell in the agent's color and fade it out, so a change stands out.
+ * @param ref The changed control's ref.
+ */
+function flashChangedCell(ref: string) {
+  // A select's element is its visually hidden label, so tint the cell.
+  (elementOf(ref) as HTMLElement)
+    .closest("td")!
+    .animate(
+      [{ backgroundColor: "color-mix(in srgb, var(--agent) 22%, transparent)" }, { backgroundColor: "transparent" }],
+      { duration: 1400, easing: "ease-out" },
+    );
+}
+
+/** Function to hide the ghost cursor a moment after a run ends; the next run starts from the panel. */
 function hideGhostCursor() {
   hideTimer = setTimeout(() => {
     delete cursorElement!.dataset.visible;
@@ -56,7 +74,7 @@ function hideGhostCursor() {
 // Cursor ----------
 
 /**
- * Function to render the agent's ghost cursor: an arrow with an "Agent" tag that the runner moves
+ * Function to render the agent's ghost cursor: an arrow with the agent's avatar that the runner moves
  * to each control before changing it. Hidden from the bridge and from pointer events.
  * @returns The cursor.
  */
@@ -73,9 +91,9 @@ function GhostCursor() {
       <svg className="ghost-cursor-arrow" width="18" height="22" viewBox="0 0 18 22">
         <path d="M1 1 L1 18 L5.5 13.5 L8.5 20.5 L11.5 19 L8.5 12.5 L15 12.5 Z" />
       </svg>
-      <span className="ghost-cursor-tag">Agent</span>
+      <img className="ghost-cursor-avatar" src={agentAvatarUrl} alt="" />
     </div>
   );
 }
 
-export { GhostCursor, hideGhostCursor, moveGhostCursor };
+export { flashChangedCell, GhostCursor, hideGhostCursor, moveGhostCursor };

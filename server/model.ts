@@ -9,7 +9,7 @@ const defaultModel = process.env.OPENROUTER_MODEL || "anthropic/claude-sonnet-5.
 const client = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
   apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: { "X-Title": "Show Me Once" },
+  defaultHeaders: { "X-Title": "ui-sdk demo" },
 });
 
 const { $schema: _, ...recipeJsonSchema } = z.toJSONSchema(recipeSchema);

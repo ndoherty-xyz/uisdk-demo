@@ -1,21 +1,22 @@
-import { members } from "./data/members";
-import { AgentBar } from "./ui/AgentBar";
+import { AgentPanel } from "./ui/AgentPanel";
 import { TeamTable } from "./ui/TeamTable";
 
 /**
- * Function to render the whole page: the team table and the floating agent bar.
+ * Function to render the whole page: the team table, and agent mode beside it.
  * @returns The page.
  */
 function App() {
   return (
-    <main className="page">
-      <header className="page-header">
-        <h1>Team</h1>
-        <p>{members.length.toLocaleString()} people · settings change as soon as you edit them</p>
-      </header>
-      <TeamTable />
-      <AgentBar />
-    </main>
+    <div className="app">
+      <main className="page">
+        <header className="page-header">
+          <h1>Team</h1>
+          <p>Settings change as soon as you edit them.</p>
+        </header>
+        <TeamTable />
+      </main>
+      <AgentPanel />
+    </div>
   );
 }
 

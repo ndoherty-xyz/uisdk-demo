@@ -7,7 +7,9 @@ import type { RecordedChange } from "../record/recording";
 
 const clauseSchema = z
   .object({
-    attr: z.enum(["team", "title", "location"]),
+    attr: z
+      .enum(["team", "title", "location", "role", "seat", "deployAlerts", "weeklyDigest"])
+      .describe("A member attribute, or a setting's current value. Switch settings compare to 'true' or 'false'."),
     op: z.enum(["eq", "neq", "in"]).describe("`in` takes an array of strings; `eq` and `neq` take one string."),
     value: z.union([z.string(), z.array(z.string()).min(1)]),
   })
@@ -43,8 +45,10 @@ type StepSchema = ReturnType<typeof stepSchemaFor>;
 const recipeSchema = z.object({
   // Reasoning comes first so models think before they commit to a filter.
   reasoning: z.string().describe("Why the filter generalizes the recording this way. One or two sentences."),
-  title: z.string().min(1).max(40).describe("Sentence case, at most 40 characters, e.g. 'Make designers editors'."),
-  summary: z.string().describe("One plain-language sentence describing what the recipe does."),
+  audience: z
+    .string()
+    .min(1)
+    .describe("Who the filter selects, as a short phrase the person could have typed, e.g. 'everyone on Design'."),
   filter: conditionSchema.nullable().describe("Who the recipe applies to. null means everyone."),
   steps: z
     .array(z.discriminatedUnion("field", fieldIds.map(stepSchemaFor) as [StepSchema, ...StepSchema[]]))

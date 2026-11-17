@@ -2,12 +2,27 @@ import { Select, SelectContent, SelectItem, SelectLabel, SelectTrigger, SelectVa
 import { Switch, SwitchThumb } from "@ui-sdk/react/switch";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { fields, type FieldId, type SelectFieldId } from "../data/fields";
-import { members, type Member } from "../data/members";
+import { attributeValueCounts, members, type Member, type Team } from "../data/members";
 import { readSettings, readSettingsVersion, subscribeSettings, writeSetting } from "../data/settingsStore";
 import { usePreviewedRecipe } from "../preview/usePreview";
 import { changesFor, matches } from "../recipe/evaluate";
 import { format } from "./format";
-import { tableVirtualizer } from "./tableVirtualizer";
+import {
+  readTableQuery,
+  readVisibleMembers,
+  setTableQuery,
+  subscribeTableQuery,
+  tableVirtualizer,
+  unfilteredQuery,
+  type SortColumn,
+  type TableQuery,
+} from "./tableVirtualizer";
+
+const chevronIcon = (
+  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+);
 
 // Controls ----------
 
@@ -31,9 +46,7 @@ function SettingSelect({ memberId, fieldId }: { memberId: string; fieldId: Selec
       <SelectLabel className="visually-hidden">{field.label}</SelectLabel>
       <SelectTrigger className="select-trigger">
         <SelectValue />
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
+        {chevronIcon}
       </SelectTrigger>
       <SelectContent className="select-content">
         {items.map((item) => (
@@ -63,6 +76,127 @@ function SettingSwitch({ memberId, fieldId }: { memberId: string; fieldId: "depl
     >
       <SwitchThumb className="switch-thumb" />
     </Switch>
+  );
+}
+
+// Toolbar ----------
+
+/**
+ * Function to render one toolbar filter: "All teams", or one value.
+ * @param props.label What it filters, e.g. "Team".
+ * @param props.allLabel The label for no filter, e.g. "All teams".
+ * @param props.values The values to pick from.
+ * @param props.value The current value; null for all.
+ * @param props.onChange Called with the new value; null for all.
+ * @returns The select.
+ */
+function FilterSelect({
+  label,
+  allLabel,
+  values,
+  value,
+  onChange,
+}: {
+  label: string;
+  allLabel: string;
+  values: string[];
+  value: string | null;
+  onChange: (value: string | null) => void;
+}) {
+  const items = [{ value: "", label: allLabel }, ...values.map((option) => ({ value: option, label: option }))];
+  return (
+    <Select value={value ?? ""} items={items} onValueChange={(next) => onChange((next as string) || null)}>
+      <SelectLabel className="visually-hidden">{label}</SelectLabel>
+      <SelectTrigger className="select-trigger" data-active={value !== null || undefined}>
+        <SelectValue />
+        {chevronIcon}
+      </SelectTrigger>
+      <SelectContent className="select-content">
+        {items.map((item) => (
+          <SelectItem key={item.value} value={item.value} className="select-item">
+            {item.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * Function to render the bar above the table: search, filters, and how many people show.
+ * @param props.tableQuery The current filters and sort.
+ * @param props.visibleCount How many people the filters leave.
+ * @returns The toolbar.
+ */
+function TableToolbar({ tableQuery, visibleCount }: { tableQuery: TableQuery; visibleCount: number }) {
+  const isFiltered = tableQuery.search !== "" || tableQuery.team !== null || tableQuery.location !== null;
+  return (
+    <div className="table-toolbar" role="search">
+      <input
+        type="search"
+        className="table-search"
+        placeholder="Search name or title"
+        aria-label="Search people"
+        value={tableQuery.search}
+        onChange={(event) => setTableQuery({ ...tableQuery, search: event.target.value })}
+      />
+      <FilterSelect
+        label="Team"
+        allLabel="All teams"
+        values={Object.keys(attributeValueCounts.team).sort()}
+        value={tableQuery.team}
+        onChange={(team) => setTableQuery({ ...tableQuery, team: team as Team | null })}
+      />
+      <FilterSelect
+        label="Location"
+        allLabel="All locations"
+        values={Object.keys(attributeValueCounts.location).sort()}
+        value={tableQuery.location}
+        onChange={(location) => setTableQuery({ ...tableQuery, location })}
+      />
+      {isFiltered && (
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => setTableQuery({ ...unfilteredQuery, sort: tableQuery.sort })}
+        >
+          Clear
+        </button>
+      )}
+      <span className="table-count muted" aria-live="polite">
+        {isFiltered
+          ? `${visibleCount.toLocaleString()} of ${members.length.toLocaleString()}`
+          : `${members.length.toLocaleString()} people`}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Function to render a column header that sorts by its column: ascending, then descending, then off.
+ * @param props.column The column it sorts.
+ * @param props.label The header text.
+ * @param props.tableQuery The current filters and sort.
+ * @returns The header cell.
+ */
+function SortableHeader({ column, label, tableQuery }: { column: SortColumn; label: string; tableQuery: TableQuery }) {
+  const direction = tableQuery.sort?.column === column ? tableQuery.sort.direction : null;
+  const nextSort: TableQuery["sort"] =
+    direction === null ? { column, direction: "asc" } : direction === "asc" ? { column, direction: "desc" } : null;
+  return (
+    <th scope="col" aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : undefined}>
+      <button
+        type="button"
+        className="sort-button"
+        data-direction={direction ?? undefined}
+        onClick={() => setTableQuery({ ...tableQuery, sort: nextSort })}
+      >
+        {label}
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="m4 10 4-4 4 4" stroke="currentColor" strokeWidth="1.75" />
+        </svg>
+      </button>
+    </th>
   );
 }
 
@@ -127,7 +261,8 @@ function MemberRow({
 }
 
 /**
- * Function to render the team table: a sticky header and only the rows in view. Each `<tr>`
+ * Function to render the team table: a toolbar to filter it, a sticky header that sorts it, and only
+ * the rows in view. Each `<tr>`
  * carries `data-member-id`, the stable key used to resolve refs. Rows a previewed recipe would
  * change carry `data-preview`.
  * @returns The table.
@@ -137,44 +272,50 @@ function TeamTable() {
   const virtualItems = useSyncExternalStore(tableVirtualizer.subscribe, tableVirtualizer.items);
   // Re-render on every settings change, so previews follow the values.
   useSyncExternalStore(subscribeSettings, readSettingsVersion);
-  const previewed = usePreviewedRecipe();
+  const previewedRecipe = usePreviewedRecipe();
+  const tableQuery = useSyncExternalStore(subscribeTableQuery, readTableQuery);
+  const visibleMembers = readVisibleMembers();
 
   // A hot reload of the virtualizer's module brings a new instance, which needs connecting too.
   useEffect(() => tableVirtualizer.connect(scrollerRef.current!), [tableVirtualizer]);
 
   return (
-    <div className="table-wrap" data-team-table ref={scrollerRef}>
-      <table className="team-table" aria-rowcount={members.length + 1}>
-        <thead>
-          <tr aria-rowindex={1}>
-            <th scope="col">Name</th>
-            <th scope="col">Team</th>
-            <th scope="col">Title</th>
-            <th scope="col">Location</th>
-            <th scope="col">{fields.role.label}</th>
-            <th scope="col">{fields.seat.label}</th>
-            <th scope="col">{fields.deployAlerts.label}</th>
-            <th scope="col">{fields.weeklyDigest.label}</th>
-          </tr>
-        </thead>
-        <tbody style={{ height: tableVirtualizer.size() }}>
-          {virtualItems.map((item) => {
-            const member = members[item.index]!;
-            const isPreviewed =
-              previewed !== null && member.id !== previewed.recordedMemberId && matches(previewed.recipe, member);
-            return (
-              <MemberRow
-                key={item.key}
-                member={member}
-                index={item.index}
-                start={item.start}
-                previewChanges={isPreviewed ? changesFor(previewed.recipe, member, readSettings(member.id)) : []}
-              />
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <TableToolbar tableQuery={tableQuery} visibleCount={visibleMembers.length} />
+      <div className="table-wrap" data-team-table ref={scrollerRef}>
+        <table className="team-table" aria-rowcount={visibleMembers.length + 1}>
+          <thead>
+            <tr aria-rowindex={1}>
+              <SortableHeader column="name" label="Name" tableQuery={tableQuery} />
+              <SortableHeader column="team" label="Team" tableQuery={tableQuery} />
+              <SortableHeader column="title" label="Title" tableQuery={tableQuery} />
+              <SortableHeader column="location" label="Location" tableQuery={tableQuery} />
+              <th scope="col">{fields.role.label}</th>
+              <th scope="col">{fields.seat.label}</th>
+              <th scope="col">{fields.deployAlerts.label}</th>
+              <th scope="col">{fields.weeklyDigest.label}</th>
+            </tr>
+          </thead>
+          <tbody style={{ height: tableVirtualizer.size() }}>
+            {virtualItems.map((item) => {
+              const member = visibleMembers[item.index]!;
+              const settings = readSettings(member.id);
+              const isPreviewed = previewedRecipe !== null && matches(previewedRecipe, member, settings);
+              return (
+                <MemberRow
+                  key={item.key}
+                  member={member}
+                  index={item.index}
+                  start={item.start}
+                  previewChanges={isPreviewed ? changesFor(previewedRecipe, member, settings) : []}
+                />
+              );
+            })}
+          </tbody>
+        </table>
+        {visibleMembers.length === 0 && <p className="table-empty muted">No one matches these filters.</p>}
+      </div>
+    </>
   );
 }
 

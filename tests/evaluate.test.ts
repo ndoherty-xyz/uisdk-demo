@@ -14,7 +14,9 @@ const priya = memberById.get("priya")!;
  * @returns Matching member ids, in table order.
  */
 function matchedIds(filter: Recipe["filter"]): string[] {
-  return namedMembers.filter((member) => matches({ filter }, member)).map((member) => member.id);
+  return namedMembers
+    .filter((member) => matches({ filter }, member, initialSettingsByMember.get(member.id)!))
+    .map((member) => member.id);
 }
 
 describe("matches", () => {
@@ -23,7 +25,13 @@ describe("matches", () => {
   });
 
   it("compares eq without case", () => {
-    expect(matchedIds({ all: [{ attr: "team", op: "eq", value: "design" }] })).toEqual(["maya", "jonah", "priya", "tomas", "ines"]);
+    expect(matchedIds({ all: [{ attr: "team", op: "eq", value: "design" }] })).toEqual([
+      "maya",
+      "jonah",
+      "priya",
+      "tomas",
+      "ines",
+    ]);
   });
 
   it("supports in and neq, ANDed together", () => {
@@ -34,6 +42,16 @@ describe("matches", () => {
       ],
     };
     expect(matchedIds(filter)).toEqual(["rosa", "kenji", "ben"]);
+  });
+
+  it("tests current settings, with switches as 'true' or 'false'", () => {
+    const filter: Recipe["filter"] = {
+      all: [
+        { attr: "role", op: "neq", value: "admin" },
+        { attr: "deployAlerts", op: "eq", value: "true" },
+      ],
+    };
+    expect(matchedIds(filter)).toEqual(["maya", "jonah", "ines", "lena", "dev", "ben"]);
   });
 });
 
@@ -46,12 +64,20 @@ describe("stepsFor and changesFor", () => {
   };
 
   it("applies per-step when conditions", () => {
-    expect(stepsFor(recipe, maya).map((step) => step.field)).toEqual(["role", "weeklyDigest"]);
-    expect(stepsFor(recipe, priya).map((step) => step.field)).toEqual(["role"]);
+    expect(stepsFor(recipe, maya, initialSettingsByMember.get("maya")!).map((step) => step.field)).toEqual([
+      "role",
+      "weeklyDigest",
+    ]);
+    expect(stepsFor(recipe, priya, initialSettingsByMember.get("priya")!).map((step) => step.field)).toEqual(["role"]);
   });
 
   it("drops steps whose value is already in place", () => {
-    expect(changesFor(recipe, maya, initialSettingsByMember.get("maya")!).map((step) => step.field)).toEqual(["role", "weeklyDigest"]);
-    expect(changesFor(recipe, maya, { ...initialSettingsByMember.get("maya")!, role: "editor" }).map((step) => step.field)).toEqual(["weeklyDigest"]);
+    expect(changesFor(recipe, maya, initialSettingsByMember.get("maya")!).map((step) => step.field)).toEqual([
+      "role",
+      "weeklyDigest",
+    ]);
+    expect(
+      changesFor(recipe, maya, { ...initialSettingsByMember.get("maya")!, role: "editor" }).map((step) => step.field),
+    ).toEqual(["weeklyDigest"]);
   });
 });

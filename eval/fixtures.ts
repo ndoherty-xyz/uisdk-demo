@@ -93,7 +93,7 @@ const fixtures: Fixture[] = [
     ],
     hint: "people based in Europe",
     expected: {
-      filter: { all: [{ attr: "location", op: "in", value: ["Lyon", "Berlin", "Madrid", "Dublin", "Leeds"] }] },
+      filter: { all: [{ attr: "location", op: "in", value: ["Lyon", "Berlin", "Madrid", "Dublin", "Leeds", "Lisbon"] }] },
       steps: [
         { field: "deployAlerts", value: false },
         { field: "weeklyDigest", value: false },
@@ -118,6 +118,29 @@ const fixtures: Fixture[] = [
         { field: "role", value: "editor" },
         { field: "weeklyDigest", value: true, when: { all: [{ attr: "title", op: "eq", value: "Product designer" }] } },
       ],
+    },
+  },
+  {
+    name: "everyone except a role",
+    recorded: [{ memberId: "maya", changes: [{ field: "role", from: "viewer", to: "editor" }] }],
+    hint: "make everyone an editor except admins",
+    expected: {
+      filter: { all: [{ attr: "role", op: "neq", value: "admin" }] },
+      steps: [{ field: "role", value: "editor" }],
+    },
+  },
+  {
+    name: "team and a switch",
+    recorded: [{ memberId: "dev", changes: [{ field: "weeklyDigest", from: false, to: true }] }],
+    hint: "engineers who have deploy alerts on",
+    expected: {
+      filter: {
+        all: [
+          { attr: "team", op: "eq", value: "Engineering" },
+          { attr: "deployAlerts", op: "eq", value: "true" },
+        ],
+      },
+      steps: [{ field: "weeklyDigest", value: true }],
     },
   },
   {

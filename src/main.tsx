@@ -1,5 +1,5 @@
 import "./bridge";
-import "@fontsource-variable/geist";
+import "allo-font/allo.css";
 import "./styles.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

@@ -1,5 +1,5 @@
 import type { HistoryEntry } from "@ui-sdk/react/history";
-import { fieldIdOfLabel, type FieldId } from "../data/fields";
+import { fieldIdOfLabel, type FieldId, type Settings } from "../data/fields";
 
 type RecordedChange = { field: FieldId; from: unknown; to: unknown };
 type Recording = { memberId: string; changes: RecordedChange[] };
@@ -49,11 +49,14 @@ function recordingFromEntries(memberId: string, entries: readonly HistoryEntry[]
 const burstGapMs = 30_000;
 
 /**
- * Function to find two rows whose latest burst of hand-made changes set the same fields to the
- * same values: the person doing the same thing twice.
+ * Function to find two rows whose latest bursts of hand-made changes left them in the same end
+ * state: every field either row changed has the same value in both. One row may already have had
+ * a value the other was given; its recording then gets that field too, unchanged, so both
+ * examples carry the whole change.
  * @param entries History entries, oldest first.
  * @param timeOf When an entry was made, in ms.
  * @param memberIdOf Resolves an entry to the member whose row it changed.
+ * @param settingsOf A member's current settings, which are the end state of their latest burst.
  * @param offeredKeys Change sets already offered; they don't count again.
  * @returns The change set's key and the two recordings, oldest burst first, or undefined.
  */
@@ -61,9 +64,10 @@ function findRepeatedChange(
   entries: readonly HistoryEntry[],
   timeOf: (entryId: string) => number,
   memberIdOf: (entry: HistoryEntry) => string | undefined,
+  settingsOf: (memberId: string) => Settings,
   offeredKeys: ReadonlySet<string>,
 ): { key: string; recordings: [Recording, Recording] } | undefined {
-  const latestBursts: { key: string; recording: Recording; endedAt: number }[] = [];
+  const latestBursts: { recording: Recording; endedAt: number }[] = [];
   for (const [memberId, memberEntries] of groupPersonEntriesByMember(entries, memberIdOf)) {
     let burstStart = memberEntries.length - 1;
     while (
@@ -75,17 +79,33 @@ function findRepeatedChange(
     const recording = recordingFromEntries(memberId, memberEntries.slice(burstStart));
     // Fields put back where they started leave nothing to repeat.
     if (recording.changes.length === 0) continue;
-    const key = recording.changes
-      .map((change) => `${change.field}=${JSON.stringify(change.to)}`)
-      .sort()
-      .join(" ");
-    latestBursts.push({ key, recording, endedAt: timeOf(memberEntries.at(-1)!.id) });
+    latestBursts.push({ recording, endedAt: timeOf(memberEntries.at(-1)!.id) });
   }
   latestBursts.sort((a, b) => a.endedAt - b.endedAt);
-  for (const [index, burst] of latestBursts.entries()) {
-    if (offeredKeys.has(burst.key)) continue;
-    const later = latestBursts.slice(index + 1).findLast((candidate) => candidate.key === burst.key);
-    if (later) return { key: burst.key, recordings: [burst.recording, later.recording] };
+  // Each burst pairs with the latest later one that ended in the same state.
+  for (const [index, { recording }] of latestBursts.entries()) {
+    for (const { recording: laterRecording } of latestBursts.slice(index + 1).reverse()) {
+      const settings = settingsOf(recording.memberId);
+      const laterSettings = settingsOf(laterRecording.memberId);
+      const changedFields = [
+        ...new Set([...recording.changes, ...laterRecording.changes].map((change) => change.field)),
+      ].sort();
+      if (changedFields.some((field) => settings[field] !== laterSettings[field])) continue;
+      const key = changedFields.map((field) => `${field}=${JSON.stringify(settings[field])}`).join(" ");
+      if (offeredKeys.has(key)) continue;
+      const withEveryField = (example: Recording, exampleSettings: Settings): Recording => ({
+        ...example,
+        changes: changedFields.map(
+          (field) =>
+            example.changes.find((change) => change.field === field) ?? {
+              field,
+              from: exampleSettings[field],
+              to: exampleSettings[field],
+            },
+        ),
+      });
+      return { key, recordings: [withEveryField(recording, settings), withEveryField(laterRecording, laterSettings)] };
+    }
   }
   return undefined;
 }

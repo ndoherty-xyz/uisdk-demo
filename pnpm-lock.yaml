@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@fontsource-variable/geist':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@hono/node-server':
         specifier: ^2.1.8
         version: 2.1.8(hono@4.13.19)
@@ -20,6 +17,9 @@ importers:
       '@ui-sdk/react':
         specifier: 0.1.0-beta.7
         version: 0.1.0-beta.7(@types/react@19.3.0)(@ui-sdk/core@0.1.0-beta.7)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      allo-font:
+        specifier: ^1.0.0
+        version: 1.0.0
       hono:
         specifier: ^4.13.19
         version: 4.13.19
@@ -233,9 +233,6 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
-
-  '@fontsource-variable/geist@5.3.0':
-    resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
 
   '@hono/node-server@2.1.8':
     resolution: {integrity: sha512-jdf7FHh6A1lzjpHHQUgxsg2GeER2vMetnAOfeActzcoli6jamlK+NAwL6Dsr5Fl3BS3tYUQzCdtZjU8Qxv7bEA==}
@@ -558,6 +555,9 @@ packages:
 
   '@vitest/spy@5.1.0':
     resolution: {integrity: sha512-2DPO5OMHWKrBngC+fCmTQqemNF0gidRhp3lxbBmRhW+M1XJrfgPpqNqWVevXtn2f2ufD5ZaR1B6B641aAlcX5A==}
+
+  allo-font@1.0.0:
+    resolution: {integrity: sha512-lHuzg9QRgC7pJVWH2JHmmg530v6b2kF9g3PdctfN9N1EtVI5j3rD9esAZ6ZXDgM5hrZe6HdVbTXFZyOCU9/VrA==}
 
   ansi-regex@6.6.0:
     resolution: {integrity: sha512-XZ5apbzreCbXSKwPjJstu8R0zOi247w3XYwWxtwBXgpZrCyc1Ka7p9/xY0A9/diMewmHbEKz+FIraWaEWjlN5g==}
@@ -1056,8 +1056,6 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@fontsource-variable/geist@5.3.0': {}
-
   '@hono/node-server@2.1.8(hono@4.13.19)':
     dependencies:
       hono: 4.13.19
@@ -1249,6 +1247,8 @@ snapshots:
       vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
 
   '@vitest/spy@5.1.0': {}
+
+  allo-font@1.0.0: {}
 
   ansi-regex@6.6.0: {}
 
