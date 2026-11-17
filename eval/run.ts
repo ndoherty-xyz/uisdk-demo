@@ -1,5 +1,5 @@
 import { fields } from "../src/data/fields";
-import { initialSettings, memberById, members } from "../src/data/members";
+import { attributeValueCounts, memberById, members } from "../src/data/members";
 import { matches, stepsFor } from "../src/recipe/evaluate";
 import type { Recipe, RecipeRequest } from "../src/recipe/schema";
 import { defaultModel, proposeRecipe, type RecipeCallResult } from "../server/model";
@@ -19,12 +19,7 @@ function requestFor(fixture: Fixture): Omit<RecipeRequest, "model"> {
       member: memberById.get(recording.memberId)!,
       changes: recording.changes,
     })),
-    members: members.map((member) => {
-      const settings = { ...initialSettings[member.id]! };
-      const recording = fixture.recorded.find((candidate) => candidate.memberId === member.id);
-      for (const change of recording?.changes ?? []) Object.assign(settings, { [change.field]: change.to });
-      return { ...member, settings };
-    }),
+    attributeValueCounts,
     fields,
     ...(fixture.hint && { hint: fixture.hint }),
   };

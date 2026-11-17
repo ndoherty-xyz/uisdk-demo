@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fieldIds, fields, type FieldId, type Settings } from "../data/fields";
+import { fieldIds, fields, type FieldId } from "../data/fields";
 import type { Member } from "../data/members";
 import type { RecordedChange } from "../record/recording";
 
@@ -66,8 +66,8 @@ type RecipeStep = Recipe["steps"][number];
 type RecipeRequest = {
   /** One or more rows the person changed the same way by hand. */
   recorded: { member: Member; changes: RecordedChange[] }[];
-  /** Every member with their current settings, read from a snapshot. */
-  members: (Member & { settings: Settings })[];
+  /** How many people have each team, title and location. */
+  attributeValueCounts: Record<"team" | "title" | "location", Record<string, number>>;
   fields: typeof fields;
   hint?: string;
   /** OpenRouter slug; the server's default when absent. */

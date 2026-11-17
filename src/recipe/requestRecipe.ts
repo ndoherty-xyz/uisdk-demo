@@ -1,14 +1,13 @@
-import { readSettingsByMember } from "../bridge";
 import { fields } from "../data/fields";
-import { memberById, members } from "../data/members";
+import { attributeValueCounts, memberById } from "../data/members";
 import type { Recording } from "../record/recording";
 import { recipeSchema, type Recipe, type RecipeRequest, type RecipeResponse } from "./schema";
 
 const giveUpMessage = "Couldn't make a recipe from that. Try a hint like 'everyone on Design'.";
 
 /**
- * Function to ask the server for a recipe from one or more recordings of the same change, with
- * everyone's current settings read from the page, and validate the answer.
+ * Function to ask the server for a recipe from one or more recordings of the same change, and
+ * validate the answer.
  * @param recordings One recording per example row.
  * @param hint Who to apply it to, in the person's words; may be empty.
  * @param model OpenRouter slug; empty for the server default.
@@ -19,13 +18,12 @@ async function requestRecipe(
   hint: string,
   model: string,
 ): Promise<{ recipe: Recipe } | { error: string }> {
-  const settingsByMember = readSettingsByMember();
   const request: RecipeRequest = {
     recorded: recordings.map((recording) => ({
       member: memberById.get(recording.memberId)!,
       changes: recording.changes,
     })),
-    members: members.map((member) => ({ ...member, settings: settingsByMember.get(member.id)! })),
+    attributeValueCounts,
     fields,
     ...(hint.trim() && { hint: hint.trim() }),
     ...(model.trim() && { model: model.trim() }),

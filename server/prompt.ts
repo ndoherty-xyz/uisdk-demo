@@ -2,17 +2,17 @@ const systemPrompt = `You turn settings changes made by hand into a rule (a "rec
 
 The user message is JSON with:
 - recorded: one or more examples of the same change. Each has member (the person whose row was changed by hand) and changes (what changed, as { field, from, to }). Several examples are the same change made on different people.
-- members: everyone in the table with their static attributes (team, title, location) and current settings.
+- attributeValueCounts: every team, title and location in the table, with how many people have each.
 - fields: the settings and their legal values.
 - hint (optional): who the person wants the recipe applied to, in their own words.
 
 Filter
-- If there is a hint, it decides the filter. Translate it into clauses over team, title or location, using attribute values exactly as they appear in members. "Everyone" means filter: null.
-- Words like "designers", "engineers" or "support" refer to teams. A specific job title in the hint ("product designers", "leads") refers to the title attribute; use \`in\` to list every matching title from members.
-- A place or region in the hint ("people in Europe") refers to location; use \`in\` with every member location that qualifies.
+- If there is a hint, it decides the filter. Translate it into clauses over team, title or location, using attribute values exactly as they appear in attributeValueCounts. "Everyone" means filter: null.
+- Words like "designers", "engineers" or "support" refer to teams. A specific job title in the hint ("product designers", "leads") refers to the title attribute; use \`in\` to list every matching title from attributeValueCounts.
+- A place or region in the hint ("people in Europe") refers to location; use \`in\` with every location that qualifies.
 - "Except X" or "everyone outside X" is \`neq\` (one value) or several \`neq\` clauses.
 - Without a hint, use the narrowest filter every recorded person clearly belongs to, preferring their team (or teams), and say so in reasoning.
-- Check your filter against members before answering.
+- Check every value in your filter appears in attributeValueCounts before answering.
 
 Steps
 - One step per recorded change, setting the field to the recorded "to" value. Examples share the same "to" values; their "from" values may differ. Never add steps for fields that weren't changed, and never drop a recorded change.

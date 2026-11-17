@@ -1,31 +1,32 @@
 import type { HistoryEntry } from "@ui-sdk/react/history";
 
-/** History as the undo rules see it, plus entries that never supersede (preview stages and reverts). */
+/** History as the undo rules see it. */
 type HistoryView = {
   entries: readonly HistoryEntry[];
   position: number;
-  ignoredEntryIds: ReadonlySet<string>;
+  /** Whose row an entry changed. Refs can't say: a row that scrolls away comes back with new ones. */
+  memberIdOf: (entry: HistoryEntry) => string;
 };
 
 /** An agent entry undo left alone, and the later entry that replaced its value. */
 type KeptEntry = { kept: HistoryEntry; supersededBy: HistoryEntry };
 
 /**
- * Function to find the entry that replaced an entry's value: a later, applied, non-reverted,
- * non-ignored entry on the same control and key.
+ * Function to find the entry that replaced an entry's value: a later, applied, non-reverted entry
+ * on the same member's same field and key.
  * @param entry The entry to check.
  * @param historyView The history to look through.
  * @returns The newest superseding entry, or undefined if the entry's value is still current.
  */
 function findSupersedingEntry(entry: HistoryEntry, historyView: HistoryView): HistoryEntry | undefined {
-  const { entries, position, ignoredEntryIds } = historyView;
+  const { entries, position, memberIdOf } = historyView;
   const later = entries.slice(entries.findIndex((candidate) => candidate.id === entry.id) + 1, position);
   return later.findLast(
     (candidate) =>
-      candidate.ref === entry.ref &&
+      memberIdOf(candidate) === memberIdOf(entry) &&
+      candidate.label === entry.label &&
       candidate.key === entry.key &&
-      !candidate.reverted &&
-      !ignoredEntryIds.has(candidate.id),
+      !candidate.reverted,
   );
 }
 

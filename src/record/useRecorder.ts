@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from "react";
-import { history, memberIdOfRef } from "../bridge";
+import { history, memberIdOfEntry } from "../bridge";
 import { groupPersonEntriesByMember, recordingFromEntries, type Recording } from "./recording";
 
 type RecorderState =
@@ -29,7 +29,7 @@ function useRecorder() {
   function finishRecording() {
     if (state.phase !== "recording") return;
     const entries = history.entries().slice(state.start, history.position());
-    const entriesByMember = groupPersonEntriesByMember(entries, memberIdOfRef);
+    const entriesByMember = groupPersonEntriesByMember(entries, memberIdOfEntry);
     const recordings = [...entriesByMember]
       .map(([memberId, memberEntries]) => recordingFromEntries(memberId, memberEntries))
       .filter((recording) => recording.changes.length > 0);

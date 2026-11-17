@@ -1,15 +1,18 @@
 import type { HistoryEntry } from "@ui-sdk/react/history";
 import { useRef, useState } from "react";
-import { agent, history, memberIdOfRef } from "../bridge";
+import { agent, history, memberIdOfRef, queryMemberControls } from "../bridge";
 import { members, type Member } from "../data/members";
-import { readSettingsWithoutPreview, revertPreview } from "../preview/usePreview";
+import { readSettings } from "../data/settingsStore";
 import { changesFor, matches } from "../recipe/evaluate";
 import { plan } from "../recipe/plan";
 import type { Recipe } from "../recipe/schema";
 import { hideGhostCursor, moveGhostCursor } from "../ui/GhostCursor";
+import { scrollToMember } from "../ui/tableVirtualizer";
 
 /** Pause after each change so it's readable. */
 const stepPauseMs = 180;
+/** Rows shown change by change with the cursor; the rest are done a row at a time, without it. */
+const animatedRowCount = 3;
 
 type RunState =
   | { phase: "idle" }
@@ -21,18 +24,17 @@ type RunTurn = { member: Member; entries: HistoryEntry[] };
 
 /**
  * Function to list who a run would change: matching members except the recorded one, minus anyone
- * who already has every value. Reads current values from a fresh snapshot, ignoring any preview.
+ * who already has every value.
  * @param recipe The recipe.
  * @param recordedMemberId The member the recording came from; already done.
  * @returns The members to update, in table order.
  */
 function findRunTargets(recipe: Recipe, recordedMemberId: string): Member[] {
-  const settingsByMember = readSettingsWithoutPreview();
   return members.filter(
     (member) =>
       member.id !== recordedMemberId &&
       matches(recipe, member) &&
-      changesFor(recipe, member, settingsByMember.get(member.id)!).length > 0,
+      changesFor(recipe, member, readSettings(member.id)).length > 0,
   );
 }
 
@@ -46,12 +48,12 @@ function useRunner() {
   const stopRequested = useRef(false);
 
   /**
-   * Function to apply a recipe to every run target, one row at a time.
+   * Function to apply a recipe to every run target, one row at a time, scrolling each into view.
+   * The first rows go change by change behind the ghost cursor; the rest go a row per `act`.
    * @param recipe The recipe.
    * @param recordedMemberId The member the recording came from; already done.
    */
   async function runRecipe(recipe: Recipe, recordedMemberId: string) {
-    await revertPreview();
     const targets = findRunTargets(recipe, recordedMemberId);
     stopRequested.current = false;
     let changedCount = 0;
@@ -62,14 +64,27 @@ function useRunner() {
       if (stopRequested.current) break;
       setRunState({ phase: "running", member, index, total: targets.length, stopping: false });
       const turnStart = history.position();
-      // Fresh snapshot per row, so refs and current values are never stale.
-      for (const step of plan(recipe, member, agent.snapshot(), memberIdOfRef)) {
-        if (stopRequested.current) break;
-        if (step.ref) await moveGhostCursor(step.ref);
-        const result =
-          step.ref && (await agent.act({ steps: [{ ref: step.ref, action: step.action, args: step.args }] }));
-        if (!result || !result.ok) failedStepCount++;
-        await new Promise((resolve) => setTimeout(resolve, stepPauseMs));
+      const isAnimated = index < animatedRowCount;
+      await scrollToMember(member.id, isAnimated ? "smooth" : "instant");
+      const steps = plan(recipe, member, await queryMemberControls(member.name, member.id), memberIdOfRef);
+      if (isAnimated) {
+        for (const step of steps) {
+          if (stopRequested.current) break;
+          if (step.ref) await moveGhostCursor(step.ref);
+          const result =
+            step.ref && (await agent.act({ steps: [{ ref: step.ref, action: step.action, args: step.args }] }));
+          if (!result || !result.ok) failedStepCount++;
+          await new Promise((resolve) => setTimeout(resolve, stepPauseMs));
+        }
+        if (index === animatedRowCount - 1) hideGhostCursor();
+      } else {
+        const actSteps = steps.filter((step) => step.ref);
+        failedStepCount += steps.length - actSteps.length;
+        const result = await agent.act({
+          steps: actSteps.map((step) => ({ ref: step.ref!, action: step.action, args: step.args })),
+        });
+        // act stops at the first failing step; that one and the rest weren't made.
+        if (result.error) failedStepCount += actSteps.length - result.error.step;
       }
       changedCount++;
       // The person may edit other rows mid-run; only the agent's entries belong to this turn.

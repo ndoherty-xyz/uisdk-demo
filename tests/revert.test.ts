@@ -28,25 +28,23 @@ const turn = [role, alerts, digest];
 /**
  * Function to view a history with everything applied.
  * @param entries The entries, oldest first.
- * @param ignoredEntryIds Entries that never supersede.
  * @returns The view.
  */
-function viewOf(entries: HistoryEntry[], ignoredEntryIds: string[] = []): HistoryView {
-  return { entries, position: entries.length, ignoredEntryIds: new Set(ignoredEntryIds) };
+function viewOf(entries: HistoryEntry[]): HistoryView {
+  return { entries, position: entries.length, memberIdOf: () => "jonah" };
 }
 
 describe("findSupersedingEntry", () => {
-  it("finds a later person change on the same control and key", () => {
-    const personRole = entry({ id: "p1", ref: "c5", value: "admin", previous: "editor", source: "mouse" });
+  it("finds a later person change on the same field and key, even after the row's refs changed", () => {
+    const personRole = entry({ id: "p1", ref: "c41", value: "admin", previous: "editor", source: "mouse" });
     expect(findSupersedingEntry(role, viewOf([...turn, personRole]))).toBe(personRole);
     expect(findSupersedingEntry(alerts, viewOf([...turn, personRole]))).toBeUndefined();
   });
 
-  it("ignores reverted, unapplied and ignored entries", () => {
+  it("ignores reverted and unapplied entries", () => {
     const reverted = entry({ id: "p1", ref: "c5", source: "mouse", reverted: true });
-    const preview = entry({ id: "s1", ref: "c5" });
     const undone = entry({ id: "p2", ref: "c5", source: "mouse" });
-    const view = { ...viewOf([...turn, reverted, preview, undone], ["s1"]), position: 5 };
+    const view = { ...viewOf([...turn, reverted, undone]), position: 4 };
     expect(findSupersedingEntry(role, view)).toBeUndefined();
   });
 });

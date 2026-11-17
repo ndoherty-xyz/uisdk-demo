@@ -1,13 +1,13 @@
 import type { HistoryEntry } from "@ui-sdk/react/history";
 import { elementOf } from "@ui-sdk/react/observe";
 import { useState, useSyncExternalStore } from "react";
-import { agent, history } from "../bridge";
+import { agent, history, memberIdOfEntry, queryMemberControls } from "../bridge";
 import { fieldIdOfLabel, fields } from "../data/fields";
-import type { Member } from "../data/members";
-import { previewEntryIds } from "../preview/usePreview";
+import { memberById, type Member } from "../data/members";
 import { findSupersedingEntry, planUndo, type HistoryView, type KeptEntry } from "../run/revert";
 import type { RunTurn } from "../run/useRunner";
 import { format } from "./format";
+import { scrollToMember } from "./tableVirtualizer";
 
 const maxVisibleToasts = 6;
 // Sonner's stack: collapsed, the newest toast is in front and two more peek out above it.
@@ -24,8 +24,8 @@ const expandedGapPx = 8;
  * @param isHighlighted Whether to add or remove the outline.
  */
 function highlightControl(ref: string, isHighlighted: boolean) {
-  // A select's element is its visually hidden label, so outline the cell.
-  elementOf(ref).closest("td")!.toggleAttribute("data-highlight", isHighlighted);
+  // A select's element is its visually hidden label, so outline the cell. Undefined once the row scrolled away.
+  (elementOf(ref) as HTMLElement | undefined)?.closest("td")!.toggleAttribute("data-highlight", isHighlighted);
 }
 
 /**
@@ -99,11 +99,7 @@ function describeKept({ kept, supersededBy }: KeptEntry, member: Member): string
 function ToastStack({ turns, onClear }: { turns: RunTurn[]; onClear: () => void }) {
   // Any table change can supersede a line, so re-render on every history move.
   const position = useSyncExternalStore(history.subscribe, history.position);
-  const historyView: HistoryView = {
-    entries: history.entries(),
-    position,
-    ignoredEntryIds: previewEntryIds,
-  };
+  const historyView: HistoryView = { entries: history.entries(), position, memberIdOf: memberIdOfEntry };
   const [removedEntryIds, setRemovedEntryIds] = useState<ReadonlySet<string>>(new Set());
   const [keptMessages, setKeptMessages] = useState<string[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -111,24 +107,30 @@ function ToastStack({ turns, onClear }: { turns: RunTurn[]; onClear: () => void 
   const [toastHeights, setToastHeights] = useState<ReadonlyMap<string, number>>(new Map());
 
   /**
-   * Function to put entries' controls back to their previous values, as one agent action. They
-   * count as removed from the start, so their own revert entries never show them as superseded.
+   * Function to put entries' controls back to their previous values, a row at a time, scrolling
+   * back to rows that left the screen. They count as removed from the start, so their own revert
+   * entries never show them as superseded.
    * @param entries The entries to revert, in order.
    */
   async function revertEntries(entries: HistoryEntry[]) {
-    if (entries.length === 0) return;
     setRemovedEntryIds((ids) => new Set([...ids, ...entries.map((entry) => entry.id)]));
-    const result = await agent.act({
-      steps: entries.map((entry) => ({
-        ref: entry.ref,
-        action: entry.key === "checked" ? "setChecked" : "setValue",
-        args: [entry.previous],
-      })),
-    });
-    // act stops at the first failing step; that one and the rest stay.
-    if (result.error) {
-      const failedIds = new Set(entries.slice(result.error.step).map((entry) => entry.id));
-      setRemovedEntryIds((ids) => new Set([...ids].filter((id) => !failedIds.has(id))));
+    const entriesByMember = Map.groupBy(entries, memberIdOfEntry);
+    for (const [memberId, memberEntries] of entriesByMember) {
+      await scrollToMember(memberId, "instant");
+      // The row may have remounted with new refs, so find its controls again by label.
+      const controls = await queryMemberControls(memberById.get(memberId)!.name, memberId);
+      const result = await agent.act({
+        steps: memberEntries.map((entry) => ({
+          ref: controls.find((control) => control.label === entry.label)!.ref,
+          action: entry.key === "checked" ? "setChecked" : "setValue",
+          args: [entry.previous],
+        })),
+      });
+      // act stops at the first failing step; that one and the rest stay.
+      if (result.error) {
+        const failedIds = new Set(memberEntries.slice(result.error.step).map((entry) => entry.id));
+        setRemovedEntryIds((ids) => new Set([...ids].filter((id) => !failedIds.has(id))));
+      }
     }
   }
 

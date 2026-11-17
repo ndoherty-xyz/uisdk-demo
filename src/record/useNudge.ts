@@ -1,19 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { history, memberIdOfRef } from "../bridge";
+import { entryTimes, history, memberIdOfEntry } from "../bridge";
 import { requestRecipe } from "../recipe/requestRecipe";
 import type { Recipe } from "../recipe/schema";
 import { findRepeatedChange, type Recording } from "./recording";
 
 /** Wait this long after the person's last change, so a row being edited is finished first. */
 const detectDelayMs = 2000;
-
-// History entries carry no time, so note when each first appears.
-const entryTimes = new Map<string, number>();
-history.subscribe(() => {
-  for (const entry of history.entries()) {
-    if (!entryTimes.has(entry.id)) entryTimes.set(entry.id, Date.now());
-  }
-});
 
 /** Two rows changed the same way by hand, with a recipe already made from them. */
 type Nudge = { examples: [Recording, Recording]; recipe: Recipe };
@@ -43,7 +35,7 @@ function useNudge(isWatching: boolean, model: string) {
         const repeated = findRepeatedChange(
           history.entries().slice(0, history.position()),
           (entryId) => entryTimes.get(entryId)!,
-          memberIdOfRef,
+          memberIdOfEntry,
           offeredKeys.current,
         );
         if (!repeated) return;

@@ -8,17 +8,17 @@ type Recording = { memberId: string; changes: RecordedChange[] };
  * Function to group the person's history entries by the row they changed, dropping agent
  * changes and entries `undoSource` reverted.
  * @param entries History entries from the recording window.
- * @param memberIdOf Resolves a component ref to its member id.
+ * @param memberIdOf Resolves an entry to the member whose row it changed.
  * @returns Entries per member id, oldest first, in the order rows were first touched.
  */
 function groupPersonEntriesByMember(
   entries: readonly HistoryEntry[],
-  memberIdOf: (ref: string) => string | undefined,
+  memberIdOf: (entry: HistoryEntry) => string | undefined,
 ): Map<string, HistoryEntry[]> {
   const entriesByMember = new Map<string, HistoryEntry[]>();
   for (const entry of entries) {
     if (entry.source === "agent" || entry.reverted) continue;
-    const memberId = memberIdOf(entry.ref);
+    const memberId = memberIdOf(entry);
     if (!memberId) continue;
     entriesByMember.set(memberId, [...(entriesByMember.get(memberId) ?? []), entry]);
   }
@@ -53,14 +53,14 @@ const burstGapMs = 30_000;
  * same values: the person doing the same thing twice.
  * @param entries History entries, oldest first.
  * @param timeOf When an entry was made, in ms.
- * @param memberIdOf Resolves a component ref to its member id.
+ * @param memberIdOf Resolves an entry to the member whose row it changed.
  * @param offeredKeys Change sets already offered; they don't count again.
  * @returns The change set's key and the two recordings, oldest burst first, or undefined.
  */
 function findRepeatedChange(
   entries: readonly HistoryEntry[],
   timeOf: (entryId: string) => number,
-  memberIdOf: (ref: string) => string | undefined,
+  memberIdOf: (entry: HistoryEntry) => string | undefined,
   offeredKeys: ReadonlySet<string>,
 ): { key: string; recordings: [Recording, Recording] } | undefined {
   const latestBursts: { key: string; recording: Recording; endedAt: number }[] = [];

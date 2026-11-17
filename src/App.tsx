@@ -1,3 +1,4 @@
+import { members } from "./data/members";
 import { AgentBar } from "./ui/AgentBar";
 import { TeamTable } from "./ui/TeamTable";
 
@@ -10,7 +11,7 @@ function App() {
     <main className="page">
       <header className="page-header">
         <h1>Team</h1>
-        <p>12 people · settings change as soon as you edit them</p>
+        <p>{members.length.toLocaleString()} people · settings change as soon as you edit them</p>
       </header>
       <TeamTable />
       <AgentBar />

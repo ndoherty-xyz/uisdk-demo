@@ -10,7 +10,7 @@ const memberIdByRef: Record<string, string> = {
   c7: "jonah",
   c8: "jonah",
 };
-const memberIdOf = (ref: string) => memberIdByRef[ref];
+const memberIdOf = (entry: HistoryEntry) => memberIdByRef[entry.ref];
 
 /**
  * Function to build a history entry with sensible defaults.
