@@ -28,7 +28,10 @@ async function rowValues(page: Page, memberId: string): Promise<Record<string, u
     const { agent, memberIdOfRef } = window as unknown as DebugWindow;
     const rowComponents = agent.snapshot().filter((component) => memberIdOfRef(component.ref) === id);
     return Object.fromEntries(
-      rowComponents.map((component) => [component.label!, component.component === "switch" ? component.checked : component.value]),
+      rowComponents.map((component) => [
+        component.label!,
+        component.component === "switch" ? component.checked : component.value,
+      ]),
     );
   }, memberId);
 }
@@ -76,9 +79,17 @@ test("running a recipe gives every Design row the recipe's values", async ({ pag
   await expect(bar).toContainText("Updated 4 people.", { timeout: 15_000 });
 
   for (const id of ["maya", "jonah", "priya", "tomas", "ines"]) {
-    expect(await rowValues(page, id), id).toMatchObject({ Role: "editor", "Deploy alerts": false, "Weekly digest": true });
+    expect(await rowValues(page, id), id).toMatchObject({
+      Role: "editor",
+      "Deploy alerts": false,
+      "Weekly digest": true,
+    });
   }
-  expect(await rowValues(page, "sam"), "sam").toMatchObject({ Role: "admin", "Deploy alerts": true, "Weekly digest": false });
+  expect(await rowValues(page, "sam"), "sam").toMatchObject({
+    Role: "admin",
+    "Deploy alerts": true,
+    "Weekly digest": false,
+  });
 });
 
 test("an open recipe previews every row it would change, and closing it puts them back", async ({ page }) => {
@@ -90,7 +101,9 @@ test("an open recipe previews every row it would change, and closing it puts the
 
   await expect(previewed).toHaveCount(4);
   await expect(jonah.locator(".preview-was")).toHaveText(["Viewer", "on", "off"]);
-  await expect.poll(() => rowValues(page, "jonah")).toMatchObject({ Role: "editor", "Deploy alerts": false, "Weekly digest": true });
+  await expect
+    .poll(() => rowValues(page, "jonah"))
+    .toMatchObject({ Role: "editor", "Deploy alerts": false, "Weekly digest": true });
   // Staged rows still count as targets.
   await expect(page.getByRole("button", { name: "Run on 4 more" })).toBeVisible();
 
@@ -107,7 +120,9 @@ test("an open recipe previews every row it would change, and closing it puts the
   await expect.poll(() => valuesExcept(page, "maya")).toEqual(before);
 });
 
-test("removing one change from a toast reverts only that field, and undoing the run restores the rest", async ({ page }) => {
+test("removing one change from a toast reverts only that field, and undoing the run restores the rest", async ({
+  page,
+}) => {
   await recordMayaAndMakeRecipe(page);
   const valuesBefore = await valuesExcept(page, "maya");
   await page.locator(".agent-bar").getByRole("button", { name: "Run on 4 more" }).click();
@@ -119,7 +134,11 @@ test("removing one change from a toast reverts only that field, and undoing the 
   const alertsLine = jonahToast.locator(".toast-change", { hasText: "Deploy alerts" });
   await alertsLine.getByRole("button", { name: "Remove" }).click();
   await expect(alertsLine).toContainText("Removed");
-  expect(await rowValues(page, "jonah")).toMatchObject({ Role: "editor", "Deploy alerts": true, "Weekly digest": true });
+  expect(await rowValues(page, "jonah")).toMatchObject({
+    Role: "editor",
+    "Deploy alerts": true,
+    "Weekly digest": true,
+  });
 
   await page.locator(".toast-stack").getByRole("button", { name: "Undo the whole run" }).click();
   await expect.poll(() => valuesExcept(page, "maya")).toEqual(valuesBefore);
@@ -142,4 +161,47 @@ test("Undo row keeps a change the person made after the run and says so", async 
   await expect
     .poll(() => rowValues(page, "jonah"))
     .toMatchObject({ Role: "admin", "Deploy alerts": true, "Weekly digest": false });
+});
+
+test("changing two rows the same way by hand offers a ready recipe for the rest", async ({ page }) => {
+  const nudgeRecipe: Recipe = { ...recipe, steps: recipe.steps.filter((step) => step.field !== "role") };
+  const requests: unknown[] = [];
+  await page.route("/api/recipe", (route) => {
+    requests.push(route.request().postDataJSON());
+    // Slow enough to see the status shown while the recipe is made.
+    return new Promise((resolve) => setTimeout(resolve, 1000)).then(() =>
+      route.fulfill({ json: { recipe: nudgeRecipe, model: "fixed" } }),
+    );
+  });
+  await page.goto("/");
+  for (const id of ["maya", "jonah"]) {
+    const row = page.locator(`tr[data-member-id="${id}"]`);
+    await row.locator('[data-slot="switch"]').nth(0).click();
+    await row.locator('[data-slot="switch"]').nth(1).click();
+  }
+
+  const bar = page.locator(".agent-bar");
+  await expect(bar).toContainText("Spotted a pattern in Maya Chen and Jonah Park. Making a recipe…");
+  await expect(bar).toContainText("You did this for Maya Chen and Jonah Park. Want me to do it for 3 more?");
+  expect(requests).toHaveLength(1);
+  expect((requests[0] as { recorded: { member: { id: string } }[] }).recorded.map((r) => r.member.id)).toEqual([
+    "maya",
+    "jonah",
+  ]);
+
+  await bar.getByRole("button", { name: "Show recipe" }).click();
+  await expect(page.locator(".recipe-card")).toBeVisible();
+  await expect(page.locator("tr[data-preview]")).toHaveCount(3);
+  await bar.getByRole("button", { name: "Run on 3 more" }).click();
+  await expect(bar).toContainText("Updated 3 people.", { timeout: 15_000 });
+  expect(await rowValues(page, "priya")).toMatchObject({ "Deploy alerts": false, "Weekly digest": true });
+
+  // Offered once: the same change by hand on another row doesn't bring it back.
+  await bar.getByRole("button", { name: "Start over" }).click();
+  const sam = page.locator('tr[data-member-id="sam"]');
+  await sam.locator('[data-slot="switch"]').nth(0).click();
+  await sam.locator('[data-slot="switch"]').nth(1).click();
+  await page.waitForTimeout(2500);
+  await expect(bar).toContainText("Change one row once");
+  expect(requests).toHaveLength(1);
 });

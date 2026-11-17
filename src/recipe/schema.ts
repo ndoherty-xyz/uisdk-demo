@@ -64,7 +64,8 @@ type RecipeStep = Recipe["steps"][number];
 
 /** Body of `POST /api/recipe`. */
 type RecipeRequest = {
-  recorded: { member: Member; changes: RecordedChange[] };
+  /** One or more rows the person changed the same way by hand. */
+  recorded: { member: Member; changes: RecordedChange[] }[];
   /** Every member with their current settings, read from a snapshot. */
   members: (Member & { settings: Settings })[];
   fields: typeof fields;

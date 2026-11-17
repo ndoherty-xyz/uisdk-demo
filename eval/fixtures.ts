@@ -1,10 +1,10 @@
-import type { RecordedChange } from "../src/record/recording";
+import type { RecordedChange, Recording } from "../src/record/recording";
 import type { Recipe } from "../src/recipe/schema";
 
 type Fixture = {
   name: string;
-  recordedMemberId: string;
-  changes: RecordedChange[];
+  /** One or more rows changed the same way by hand; the last is the one the UI treats as recorded. */
+  recorded: Recording[];
   hint?: string;
   /** Compared by effect: which members get which values, not by exact clause shape. */
   expected: Pick<Recipe, "filter" | "steps">;
@@ -22,27 +22,34 @@ const mayaSteps: Recipe["steps"] = [
   { field: "weeklyDigest", value: true },
 ];
 
+const twoExampleChanges: RecordedChange[] = [
+  { field: "deployAlerts", from: true, to: false },
+  { field: "weeklyDigest", from: false, to: true },
+];
+
 const fixtures: Fixture[] = [
   {
     name: "team from hint",
-    recordedMemberId: "maya",
-    changes: mayaChanges,
+    recorded: [{ memberId: "maya", changes: mayaChanges }],
     hint: "everyone on Design",
     expected: { filter: { all: [{ attr: "team", op: "eq", value: "Design" }] }, steps: mayaSteps },
   },
   {
     name: "title from hint",
-    recordedMemberId: "maya",
-    changes: mayaChanges,
+    recorded: [{ memberId: "maya", changes: mayaChanges }],
     hint: "all the product designers",
     expected: { filter: { all: [{ attr: "title", op: "eq", value: "Product designer" }] }, steps: mayaSteps },
   },
   {
     name: "two teams",
-    recordedMemberId: "amara",
-    changes: [
-      { field: "role", from: "viewer", to: "editor" },
-      { field: "weeklyDigest", from: false, to: true },
+    recorded: [
+      {
+        memberId: "amara",
+        changes: [
+          { field: "role", from: "viewer", to: "editor" },
+          { field: "weeklyDigest", from: false, to: true },
+        ],
+      },
     ],
     hint: "everyone in Marketing and Support",
     expected: {
@@ -55,10 +62,14 @@ const fixtures: Fixture[] = [
   },
   {
     name: "everyone except a team",
-    recordedMemberId: "rosa",
-    changes: [
-      { field: "seat", from: "guest", to: "full" },
-      { field: "weeklyDigest", from: true, to: false },
+    recorded: [
+      {
+        memberId: "rosa",
+        changes: [
+          { field: "seat", from: "guest", to: "full" },
+          { field: "weeklyDigest", from: true, to: false },
+        ],
+      },
     ],
     hint: "everyone outside Design",
     expected: {
@@ -71,10 +82,14 @@ const fixtures: Fixture[] = [
   },
   {
     name: "region to locations",
-    recordedMemberId: "lena",
-    changes: [
-      { field: "deployAlerts", from: true, to: false },
-      { field: "weeklyDigest", from: true, to: false },
+    recorded: [
+      {
+        memberId: "lena",
+        changes: [
+          { field: "deployAlerts", from: true, to: false },
+          { field: "weeklyDigest", from: true, to: false },
+        ],
+      },
     ],
     hint: "people based in Europe",
     expected: {
@@ -87,10 +102,14 @@ const fixtures: Fixture[] = [
   },
   {
     name: "per-step condition",
-    recordedMemberId: "maya",
-    changes: [
-      { field: "role", from: "viewer", to: "editor" },
-      { field: "weeklyDigest", from: false, to: true },
+    recorded: [
+      {
+        memberId: "maya",
+        changes: [
+          { field: "role", from: "viewer", to: "editor" },
+          { field: "weeklyDigest", from: false, to: true },
+        ],
+      },
     ],
     hint: "everyone on Design, but only turn on the digest for product designers",
     expected: {
@@ -103,22 +122,65 @@ const fixtures: Fixture[] = [
   },
   {
     name: "no hint, designer",
-    recordedMemberId: "maya",
-    changes: mayaChanges,
+    recorded: [{ memberId: "maya", changes: mayaChanges }],
     expected: { filter: { all: [{ attr: "team", op: "eq", value: "Design" }] }, steps: mayaSteps },
   },
   {
     name: "no hint, support lead",
-    recordedMemberId: "ben",
-    changes: [
-      { field: "role", from: "editor", to: "admin" },
-      { field: "deployAlerts", from: true, to: false },
+    recorded: [
+      {
+        memberId: "ben",
+        changes: [
+          { field: "role", from: "editor", to: "admin" },
+          { field: "deployAlerts", from: true, to: false },
+        ],
+      },
     ],
     expected: {
       filter: { all: [{ attr: "team", op: "eq", value: "Support" }] },
       steps: [
         { field: "role", value: "admin" },
         { field: "deployAlerts", value: false },
+      ],
+    },
+  },
+  {
+    name: "two examples, same team",
+    recorded: [
+      { memberId: "sam", changes: twoExampleChanges },
+      { memberId: "dev", changes: twoExampleChanges },
+    ],
+    expected: {
+      filter: { all: [{ attr: "team", op: "eq", value: "Engineering" }] },
+      steps: [
+        { field: "deployAlerts", value: false },
+        { field: "weeklyDigest", value: true },
+      ],
+    },
+  },
+  {
+    name: "two examples, two teams",
+    recorded: [
+      {
+        memberId: "kenji",
+        changes: [
+          { field: "role", from: "editor", to: "admin" },
+          { field: "seat", from: "full", to: "guest" },
+        ],
+      },
+      {
+        memberId: "amara",
+        changes: [
+          { field: "role", from: "viewer", to: "admin" },
+          { field: "seat", from: "full", to: "guest" },
+        ],
+      },
+    ],
+    expected: {
+      filter: { all: [{ attr: "team", op: "in", value: ["Marketing", "Support"] }] },
+      steps: [
+        { field: "role", value: "admin" },
+        { field: "seat", value: "guest" },
       ],
     },
   },

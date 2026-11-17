@@ -7,7 +7,8 @@ type RecorderState =
   | { phase: "recording"; start: number; empty: boolean }
   /** Changes touched several rows; `suggestedMemberId` is the one with the most entries. */
   | { phase: "conflict"; recordings: Recording[]; suggestedMemberId: string }
-  | { phase: "recorded"; recording: Recording };
+  /** `otherExamples` are earlier rows changed the same way, when the nudge started this. */
+  | { phase: "recorded"; recording: Recording; otherExamples: Recording[] };
 
 /**
  * Function to drive Show me / Done: remembers where history stood when recording began and turns
@@ -35,7 +36,7 @@ function useRecorder() {
     if (recordings.length === 0) {
       setState({ ...state, empty: true });
     } else if (recordings.length === 1) {
-      setState({ phase: "recorded", recording: recordings[0]! });
+      setState({ phase: "recorded", recording: recordings[0]!, otherExamples: [] });
     } else {
       const entryCount = (recording: Recording) => entriesByMember.get(recording.memberId)!.length;
       const suggested = recordings.reduce((most, recording) =>
@@ -52,7 +53,15 @@ function useRecorder() {
   function keepMemberOnly(memberId: string) {
     if (state.phase !== "conflict") return;
     const recording = state.recordings.find((candidate) => candidate.memberId === memberId)!;
-    setState({ phase: "recorded", recording });
+    setState({ phase: "recorded", recording, otherExamples: [] });
+  }
+
+  /**
+   * Function to skip recording and use rows the person already changed the same way by hand.
+   * @param examples The recordings, oldest first; the last becomes the recording.
+   */
+  function recordFromExamples(examples: Recording[]) {
+    setState({ phase: "recorded", recording: examples.at(-1)!, otherExamples: examples.slice(0, -1) });
   }
 
   /** Function to drop whatever was recorded and go back to idle. */
@@ -60,7 +69,7 @@ function useRecorder() {
     setState({ phase: "idle" });
   }
 
-  return { state, changeCount, startRecording, finishRecording, keepMemberOnly, resetRecorder };
+  return { state, changeCount, startRecording, finishRecording, keepMemberOnly, recordFromExamples, resetRecorder };
 }
 
 export { useRecorder };

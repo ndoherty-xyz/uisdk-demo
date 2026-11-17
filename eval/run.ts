@@ -8,19 +8,21 @@ import { fixtures, type Fixture } from "./fixtures";
 // Helpers ----------
 
 /**
- * Function to build the request the UI would send for a fixture: seed settings, with the recorded
- * member's changes already applied.
+ * Function to build the request the UI would send for a fixture: seed settings, with each
+ * recorded member's changes already applied.
  * @param fixture The fixture.
  * @returns The request body.
  */
 function requestFor(fixture: Fixture): Omit<RecipeRequest, "model"> {
   return {
-    recorded: { member: memberById.get(fixture.recordedMemberId)!, changes: fixture.changes },
+    recorded: fixture.recorded.map((recording) => ({
+      member: memberById.get(recording.memberId)!,
+      changes: recording.changes,
+    })),
     members: members.map((member) => {
       const settings = { ...initialSettings[member.id]! };
-      if (member.id === fixture.recordedMemberId) {
-        for (const change of fixture.changes) Object.assign(settings, { [change.field]: change.to });
-      }
+      const recording = fixture.recorded.find((candidate) => candidate.memberId === member.id);
+      for (const change of recording?.changes ?? []) Object.assign(settings, { [change.field]: change.to });
       return { ...member, settings };
     }),
     fields,
@@ -71,7 +73,9 @@ const outcomesByModel = await Promise.all(
         const expected = effectOf(fixture.expected);
         const actual = effectOf(result.recipe);
         const mismatches = actual
-          .map((line, index) => (line === expected[index] ? undefined : `got ${line}  want ${expected[index]!.split(": ")[1]}`))
+          .map((line, index) =>
+            line === expected[index] ? undefined : `got ${line}  want ${expected[index]!.split(": ")[1]}`,
+          )
           .filter((line): line is string => line !== undefined);
         return { fixture, result, passed: mismatches.length === 0, mismatches };
       }),
@@ -83,9 +87,12 @@ const outcomesByModel = await Promise.all(
 for (const { model, outcomes } of outcomesByModel) {
   console.log(`\n${model}`);
   for (const { fixture, result, passed, mismatches } of outcomes) {
-    console.log(`  ${passed ? "✓" : "✗"} ${fixture.name}${result.attempts > 1 ? ` (${result.attempts} attempts)` : ""}`);
+    console.log(
+      `  ${passed ? "✓" : "✗"} ${fixture.name}${result.attempts > 1 ? ` (${result.attempts} attempts)` : ""}`,
+    );
     if (!passed) {
-      if (result.ok) console.log(`      filter: ${JSON.stringify(result.recipe.filter)}  reasoning: ${result.recipe.reasoning}`);
+      if (result.ok)
+        console.log(`      filter: ${JSON.stringify(result.recipe.filter)}  reasoning: ${result.recipe.reasoning}`);
       for (const mismatch of mismatches) console.log(`      ${mismatch}`);
     }
   }

@@ -272,6 +272,10 @@ body {
   animation: recording-pulse 1.4s ease-in-out infinite;
 }
 
+.recording-dot[data-tone="agent"] {
+  background: var(--agent);
+}
+
 @keyframes recording-pulse {
   50% {
     opacity: 0.35;

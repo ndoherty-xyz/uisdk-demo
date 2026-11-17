@@ -5,6 +5,7 @@ import { previewRecipe } from "../preview/usePreview";
 import { requestRecipe } from "../recipe/requestRecipe";
 import type { Recipe } from "../recipe/schema";
 import type { Recording } from "../record/recording";
+import { useNudge } from "../record/useNudge";
 import { useRecorder } from "../record/useRecorder";
 import { findRunTargets, useRunner } from "../run/useRunner";
 import { ToastStack } from "./ToastStack";
@@ -38,7 +39,8 @@ function RecordedChips({ recording }: { recording: Recording }) {
  * @returns The bar and card.
  */
 function AgentBar() {
-  const { state, changeCount, startRecording, finishRecording, keepMemberOnly, resetRecorder } = useRecorder();
+  const { state, changeCount, startRecording, finishRecording, keepMemberOnly, recordFromExamples, resetRecorder } =
+    useRecorder();
   const [hint, setHint] = useState("");
   const [model, setModel] = useState("");
   const [recipe, setRecipe] = useState<Recipe | null>(null);
@@ -47,6 +49,7 @@ function AgentBar() {
   const [isMaking, setIsMaking] = useState(false);
   const [recipeError, setRecipeError] = useState<string | null>(null);
   const { runState, runTurns, runRecipe, stopRun, resetRunner, clearRunTurns } = useRunner();
+  const { spottedExamples, nudge, dismissNudge } = useNudge(state.phase === "idle" && runState.phase === "idle", model);
 
   // Development only: prefill the model picker with the server's default.
   useEffect(() => {
@@ -66,13 +69,13 @@ function AgentBar() {
   }
 
   /**
-   * Function to ask the model for a recipe from the recording and the hint.
-   * @param recording The recording to generalize.
+   * Function to ask the model for a recipe from the recorded rows and the hint.
+   * @param recordings One recording per example row.
    */
-  async function makeRecipe(recording: Recording) {
+  async function makeRecipe(recordings: Recording[]) {
     setIsMaking(true);
     setRecipeError(null);
-    const result = await requestRecipe(recording, hint, model);
+    const result = await requestRecipe(recordings, hint, model);
     setIsMaking(false);
     if ("error" in result) return setRecipeError(result.error);
     setRecipe(result.recipe);
@@ -89,6 +92,9 @@ function AgentBar() {
 
   // Recomputed on every table change: useRecorder re-renders the bar when history moves.
   const runCount = state.phase === "recorded" && recipe ? findRunTargets(recipe, state.recording.memberId).length : 0;
+  const nudgeRunCount = nudge ? findRunTargets(nudge.recipe, nudge.examples[1].memberId).length : 0;
+  const isOffering = nudge !== null && nudgeRunCount > 0;
+  const examples = state.phase === "recorded" ? [...state.otherExamples, state.recording] : [];
 
   return (
     <>
@@ -101,11 +107,50 @@ function AgentBar() {
             recordedMember={memberById.get(state.recording.memberId)!}
             isMaking={isMaking}
             onChange={setRecipe}
-            onRegenerate={() => makeRecipe(state.recording)}
+            onRegenerate={() => makeRecipe(examples)}
           />
         )}
         <div className="agent-bar" data-phase={state.phase}>
-          {state.phase === "idle" && (
+          {state.phase === "idle" && !isOffering && spottedExamples && (
+            <>
+              <span className="recording-dot" data-tone="agent" aria-hidden="true" />
+              <p className="bar-message" role="status">
+                Spotted a pattern in{" "}
+                <strong>
+                  {spottedExamples.map((example) => memberById.get(example.memberId)!.name).join(" and ")}
+                </strong>
+                . Making a recipe…
+              </p>
+            </>
+          )}
+
+          {state.phase === "idle" && isOffering && (
+            <>
+              <p className="bar-message" role="status">
+                You did this for{" "}
+                <strong>{nudge.examples.map((example) => memberById.get(example.memberId)!.name).join(" and ")}</strong>
+                . Want me to do it for {nudgeRunCount} more?
+              </p>
+              <RecordedChips recording={nudge.examples[1]} />
+              <button type="button" className="button" onClick={dismissNudge}>
+                Not now
+              </button>
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => {
+                  recordFromExamples(nudge.examples);
+                  setRecipe(nudge.recipe);
+                  setRecipeVersion((version) => version + 1);
+                  dismissNudge();
+                }}
+              >
+                Show recipe
+              </button>
+            </>
+          )}
+
+          {state.phase === "idle" && !isOffering && !spottedExamples && (
             <>
               <p className="bar-message">Change one row once, and I'll do it for the rest.</p>
               <button type="button" className="button primary" onClick={startRecording}>
@@ -178,7 +223,7 @@ function AgentBar() {
             <div className="bar-recorded">
               <div className="bar-row">
                 <p className="bar-message">
-                  <strong>{memberById.get(state.recording.memberId)!.name}</strong>
+                  <strong>{examples.map((example) => memberById.get(example.memberId)!.name).join(" and ")}</strong>
                 </p>
                 <RecordedChips recording={state.recording} />
               </div>
@@ -186,7 +231,7 @@ function AgentBar() {
                 className="bar-row"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  makeRecipe(state.recording);
+                  makeRecipe(examples);
                 }}
               >
                 <input
