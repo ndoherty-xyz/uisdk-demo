@@ -1,14 +1,30 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import type { RecipeRequest, RecipeResponse } from "../src/recipe/schema";
+import { defaultModel, proposeRecipe } from "./model";
 
-const defaultModel = process.env.OPENROUTER_MODEL ?? "anthropic/claude-sonnet-5.5";
+const isDev = process.env.NODE_ENV !== "production";
 
 const app = new Hono();
 
 app.get("/api/config", (c) => c.json({ model: defaultModel }));
 
-// Filled in at M2 (server/model.ts).
-app.post("/api/recipe", (c) => c.json({ error: "Not implemented yet" }, 501));
+app.post("/api/recipe", async (c) => {
+  const { model, ...request } = await c.req.json<RecipeRequest>();
+  if (isDev) console.log("→ /api/recipe", JSON.stringify(request));
+
+  const result = await proposeRecipe(request, model || undefined);
+  if (isDev) {
+    const { promptTokens, completionTokens, cost } = result.usage;
+    console.log(
+      `← ${result.model} ${result.ok ? "ok" : "error"} ${result.latencyMs}ms attempts=${result.attempts} tokens=${promptTokens}/${completionTokens} cost=$${cost.toFixed(5)}`,
+    );
+    console.log(JSON.stringify(result.ok ? result.recipe : { error: result.error, detail: result.detail }));
+  }
+
+  const response: RecipeResponse = result.ok ? { recipe: result.recipe, model: result.model } : { error: result.error };
+  return c.json(response, result.ok ? 200 : 502);
+});
 
 serve({ fetch: app.fetch, port: 8787 }, (info) => {
   console.log(`api listening on http://localhost:${info.port}`);

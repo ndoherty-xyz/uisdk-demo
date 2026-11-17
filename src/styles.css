@@ -195,13 +195,22 @@ body {
 
 /* Agent bar ---------- */
 
-.agent-bar {
+.agent-dock {
   position: fixed;
   bottom: 24px;
   left: 50%;
   display: flex;
   width: max-content;
   max-width: calc(100vw - 32px);
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  translate: -50% 0;
+}
+
+.agent-bar {
+  display: flex;
+  max-width: 100%;
   align-items: center;
   gap: 8px;
   padding: 8px 8px 8px 16px;
@@ -209,7 +218,6 @@ body {
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  translate: -50% 0;
 }
 
 .bar-message {
@@ -281,6 +289,133 @@ body {
   background: var(--bg);
   color: inherit;
   font: inherit;
+}
+
+.model-input {
+  width: 200px;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+}
+
+.bar-error {
+  margin: 0;
+}
+
+/* Recipe card ---------- */
+
+.recipe-card {
+  display: flex;
+  width: 560px;
+  max-width: 100%;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.recipe-card[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.recipe-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.recipe-card p {
+  margin: 0;
+}
+
+.recipe-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clauses,
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clause,
+.step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.clause input {
+  min-width: 0;
+  flex: 1;
+}
+
+.recipe-card select,
+.recipe-card input {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+
+.recipe-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.recipe-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recipe-footer summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.link-button,
+.icon-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.link-button:hover,
+.icon-button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.icon-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 16px;
+}
+
+.icon-button:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 /* Buttons ---------- */
