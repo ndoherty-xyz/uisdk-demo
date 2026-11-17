@@ -481,3 +481,136 @@ body {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
+
+/* Toasts ---------- */
+
+.toast-stack {
+  --toast-ease: cubic-bezier(0.215, 0.61, 0.355, 1);
+  position: fixed;
+  right: 16px;
+  bottom: 24px;
+  display: flex;
+  width: min(340px, calc(100vw - 32px));
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast-stack-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toast-kept,
+.toasts,
+.toast-changes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toast-kept {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.toast-more {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.toasts {
+  position: relative;
+  transition: height 400ms var(--toast-ease);
+}
+
+.toast {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  height: 42px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--agent);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.08);
+  font-size: 13px;
+  transform: translateY(var(--toast-y)) scale(var(--toast-scale));
+  transform-origin: center top;
+  transition:
+    transform 400ms var(--toast-ease),
+    height 400ms var(--toast-ease),
+    opacity 400ms var(--toast-ease);
+}
+
+@starting-style {
+  .toast {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+.toast[data-buried] {
+  opacity: 0;
+}
+
+/* Toasts behind the front one only show their edge while collapsed. */
+.toasts:not([data-expanded]) .toast:not([data-front]) .toast-content {
+  opacity: 0;
+}
+
+.toast-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  transition: opacity 200ms;
+}
+
+.toast-summary {
+  margin: 0;
+  line-height: 20px;
+}
+
+.toast-changes {
+  display: flex;
+  align-self: stretch;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toast-change {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.toast-change[data-removed] .toast-change-text {
+  color: var(--removed);
+  text-decoration: line-through;
+}
+
+td[data-highlight] {
+  outline: 2px solid var(--agent);
+  outline-offset: -4px;
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toasts,
+  .toast {
+    transition: none;
+  }
+}

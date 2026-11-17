@@ -7,7 +7,11 @@ import { matches } from "../recipe/evaluate";
 import { plan, type PlannedStep } from "../recipe/plan";
 import type { Recipe } from "../recipe/schema";
 
-// Preview entries land in history as agent entries, so recordings (person entries only) already skip them.
+/**
+ * Stage and revert entries from previews. Recordings (person entries only) skip them already; the
+ * superseded rule needs this to skip them too.
+ */
+const previewEntryIds = new Set<string>();
 
 /** Staged steps by member id; empty when nothing is previewed. */
 type StagedSteps = Map<string, PlannedStep[]>;
@@ -33,13 +37,27 @@ function setStagedSteps(steps: StagedSteps) {
 }
 
 /**
+ * Function to run a stage or revert and add the agent entries it made to `previewEntryIds`.
+ * @param stageOrRevert The call that changes controls.
+ * @returns What the call returned.
+ */
+async function rememberPreviewEntries<T>(stageOrRevert: () => Promise<T>): Promise<T> {
+  const start = history.position();
+  const result = await stageOrRevert();
+  for (const entry of history.entries().slice(start)) {
+    if (entry.source === "agent") previewEntryIds.add(entry.id);
+  }
+  return result;
+}
+
+/**
  * Function to put every staged row back, if any.
  * @returns When the revert has finished.
  */
 async function revertStagedRows() {
   const handle = stagedHandle;
   stagedHandle = null;
-  await handle?.revert();
+  await rememberPreviewEntries(async () => handle?.revert());
   if (stagedSteps.size > 0) setStagedSteps(new Map());
 }
 
@@ -59,9 +77,11 @@ async function stagePreviewedRecipe() {
   }
   // Set before staging, so readSettingsWithoutPreview never mistakes staged values for real ones.
   setStagedSteps(steps);
-  stagedHandle = await stageChanges(
-    agent,
-    [...steps.values()].flat().map((step) => ({ ref: step.ref!, key: fields[step.field].key, value: step.args[0] })),
+  stagedHandle = await rememberPreviewEntries(() =>
+    stageChanges(
+      agent,
+      [...steps.values()].flat().map((step) => ({ ref: step.ref!, key: fields[step.field].key, value: step.args[0] })),
+    ),
   );
 }
 
@@ -129,4 +149,4 @@ function usePreview(): StagedSteps {
   );
 }
 
-export { previewRecipe, readSettingsWithoutPreview, revertPreview, usePreview };
+export { previewEntryIds, previewRecipe, readSettingsWithoutPreview, revertPreview, usePreview };

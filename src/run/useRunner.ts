@@ -1,5 +1,6 @@
+import type { HistoryEntry } from "@ui-sdk/react/history";
 import { useRef, useState } from "react";
-import { agent, memberIdOfRef } from "../bridge";
+import { agent, history, memberIdOfRef } from "../bridge";
 import { members, type Member } from "../data/members";
 import { readSettingsWithoutPreview, revertPreview } from "../preview/usePreview";
 import { changesFor, matches } from "../recipe/evaluate";
@@ -13,6 +14,9 @@ type RunState =
   | { phase: "idle" }
   | { phase: "running"; member: Member; index: number; total: number; stopping: boolean }
   | { phase: "finished"; changedCount: number; failedStepCount: number; stopped: boolean };
+
+/** One row's share of a run: the history entries the agent made on it. */
+type RunTurn = { member: Member; entries: HistoryEntry[] };
 
 /**
  * Function to list who a run would change: matching members except the recorded one, minus anyone
@@ -33,10 +37,11 @@ function findRunTargets(recipe: Recipe, recordedMemberId: string): Member[] {
 
 /**
  * Function to drive a run: applies a recipe to each target row in order, one `act` per step.
- * @returns The run state and its actions.
+ * @returns The run state, the last run's turns, and their actions.
  */
 function useRunner() {
   const [runState, setRunState] = useState<RunState>({ phase: "idle" });
+  const [runTurns, setRunTurns] = useState<RunTurn[]>([]);
   const stopRequested = useRef(false);
 
   /**
@@ -50,18 +55,27 @@ function useRunner() {
     stopRequested.current = false;
     let changedCount = 0;
     let failedStepCount = 0;
+    setRunTurns([]);
 
     for (const [index, member] of targets.entries()) {
       if (stopRequested.current) break;
       setRunState({ phase: "running", member, index, total: targets.length, stopping: false });
+      const turnStart = history.position();
       // Fresh snapshot per row, so refs and current values are never stale.
       for (const step of plan(recipe, member, agent.snapshot(), memberIdOfRef)) {
         if (stopRequested.current) break;
-        const result = step.ref && (await agent.act({ steps: [{ ref: step.ref, action: step.action, args: step.args }] }));
+        const result =
+          step.ref && (await agent.act({ steps: [{ ref: step.ref, action: step.action, args: step.args }] }));
         if (!result || !result.ok) failedStepCount++;
         await new Promise((resolve) => setTimeout(resolve, stepPauseMs));
       }
       changedCount++;
+      // The person may edit other rows mid-run; only the agent's entries belong to this turn.
+      const turnEntries = history
+        .entries()
+        .slice(turnStart)
+        .filter((entry) => entry.source === "agent");
+      setRunTurns((turns) => [...turns, { member, entries: turnEntries }]);
     }
 
     setRunState({ phase: "finished", changedCount, failedStepCount, stopped: stopRequested.current });
@@ -78,8 +92,13 @@ function useRunner() {
     setRunState({ phase: "idle" });
   }
 
-  return { runState, runRecipe, stopRun, resetRunner };
+  /** Function to dismiss every turn without reverting anything. */
+  function clearRunTurns() {
+    setRunTurns([]);
+  }
+
+  return { runState, runTurns, runRecipe, stopRun, resetRunner, clearRunTurns };
 }
 
 export { findRunTargets, useRunner };
-export type { RunState };
+export type { RunState, RunTurn };

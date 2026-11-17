@@ -106,3 +106,40 @@ test("an open recipe previews every row it would change, and closing it puts the
   await expect(previewed).toHaveCount(0);
   await expect.poll(() => valuesExcept(page, "maya")).toEqual(before);
 });
+
+test("removing one change from a toast reverts only that field, and undoing the run restores the rest", async ({ page }) => {
+  await recordMayaAndMakeRecipe(page);
+  const valuesBefore = await valuesExcept(page, "maya");
+  await page.locator(".agent-bar").getByRole("button", { name: "Run on 4 more" }).click();
+  await expect(page.locator(".toast")).toHaveCount(4, { timeout: 15_000 });
+
+  const jonahToast = page.locator(".toast", { hasText: "Jonah Park" });
+  await expect(jonahToast).toContainText("Jonah Park: 3 changes");
+  await page.locator(".toast-stack").hover();
+  const alertsLine = jonahToast.locator(".toast-change", { hasText: "Deploy alerts" });
+  await alertsLine.getByRole("button", { name: "Remove" }).click();
+  await expect(alertsLine).toContainText("Removed");
+  expect(await rowValues(page, "jonah")).toMatchObject({ Role: "editor", "Deploy alerts": true, "Weekly digest": true });
+
+  await page.locator(".toast-stack").getByRole("button", { name: "Undo the whole run" }).click();
+  await expect.poll(() => valuesExcept(page, "maya")).toEqual(valuesBefore);
+  await expect(page.locator(".toast-kept")).toHaveCount(0);
+});
+
+test("Undo row keeps a change the person made after the run and says so", async ({ page }) => {
+  await recordMayaAndMakeRecipe(page);
+  await page.locator(".agent-bar").getByRole("button", { name: "Run on 4 more" }).click();
+  await expect(page.locator(".toast")).toHaveCount(4, { timeout: 15_000 });
+
+  await page.locator('tr[data-member-id="jonah"] [data-slot="select-trigger"]').first().click();
+  await page.getByRole("option", { name: "Admin" }).click();
+
+  const jonahToast = page.locator(".toast", { hasText: "Jonah Park" });
+  await page.locator(".toast-stack").hover();
+  await expect(jonahToast.locator(".toast-change", { hasText: "Role" })).toContainText("Changed since");
+  await jonahToast.getByRole("button", { name: "Undo row" }).click();
+  await expect(page.locator(".toast-kept")).toHaveText("Kept Role for Jonah Park: you changed it after the agent.");
+  await expect
+    .poll(() => rowValues(page, "jonah"))
+    .toMatchObject({ Role: "admin", "Deploy alerts": true, "Weekly digest": false });
+});
