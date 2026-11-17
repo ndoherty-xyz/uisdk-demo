@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fields } from "../data/fields";
 import { memberById } from "../data/members";
+import { previewRecipe } from "../preview/usePreview";
 import { requestRecipe } from "../recipe/requestRecipe";
 import type { Recipe } from "../recipe/schema";
 import type { Recording } from "../record/recording";
@@ -77,12 +78,17 @@ function AgentBar() {
     setRecipeVersion((version) => version + 1);
   }
 
+  const isCardShowing = state.phase === "recorded" && recipe !== null && runState.phase === "idle";
+  const recordedMemberId = state.phase === "recorded" ? state.recording.memberId : "";
+  // The table previews whatever the card shows; no card (or a run) means no preview.
+  useEffect(() => previewRecipe(isCardShowing ? recipe : null, recordedMemberId), [isCardShowing, recipe, recordedMemberId]);
+
   // Recomputed on every table change: useRecorder re-renders the bar when history moves.
   const runCount = state.phase === "recorded" && recipe ? findRunTargets(recipe, state.recording.memberId).length : 0;
 
   return (
     <div className="agent-dock" data-agent-hidden>
-      {state.phase === "recorded" && recipe && runState.phase === "idle" && (
+      {isCardShowing && state.phase === "recorded" && (
         <RecipeCard
           key={recipeVersion}
           recipe={recipe}

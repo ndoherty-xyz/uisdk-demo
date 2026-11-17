@@ -107,6 +107,31 @@ body {
   border-bottom: 0;
 }
 
+.team-table tbody tr[data-preview] {
+  background: color-mix(in srgb, var(--agent) 8%, transparent);
+}
+
+/* Staged values aren't real, so a previewed row can't be clicked until the preview ends. */
+.team-table tbody tr[data-preview] td {
+  position: relative;
+  pointer-events: none;
+}
+
+/* Settings cells always leave room for the old value, so showing it never moves the layout. */
+.team-table td:nth-child(n + 5) {
+  padding-right: 56px;
+}
+
+/* Out of flow, so showing it never widens the column. */
+.preview-was {
+  position: absolute;
+  top: 50%;
+  margin-left: 8px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .name-cell {
   font-weight: 500;
 }

@@ -7,8 +7,10 @@ import {
   SelectValue,
 } from "@ui-sdk/react/select";
 import { Switch, SwitchThumb } from "@ui-sdk/react/switch";
-import { fields, type SelectFieldId } from "../data/fields";
+import { fields, type FieldId, type SelectFieldId } from "../data/fields";
 import { initialSettings, members } from "../data/members";
+import { usePreview } from "../preview/usePreview";
+import { format } from "./format";
 
 // Controls ----------
 
@@ -60,10 +62,12 @@ function SettingSwitch({ label, defaultChecked }: { label: string; defaultChecke
 
 /**
  * Function to render the team table: static member details plus four uncontrolled settings per
- * row. Each `<tr>` carries `data-member-id`, the stable key used to resolve refs.
+ * row. Each `<tr>` carries `data-member-id`, the stable key used to resolve refs. Rows a recipe
+ * preview has staged carry `data-preview` and show each changed cell's old value.
  * @returns The table.
  */
 function TeamTable() {
+  const stagedStepsByMember = usePreview();
   return (
     <div className="table-wrap" data-team-table>
       <table className="team-table">
@@ -82,8 +86,18 @@ function TeamTable() {
         <tbody>
           {members.map((member) => {
             const settings = initialSettings[member.id]!;
+            const stagedSteps = stagedStepsByMember.get(member.id) ?? [];
+            // The value a staged cell had before the preview, struck through next to the control.
+            const previousValue = (fieldId: FieldId) => {
+              const step = stagedSteps.find((candidate) => candidate.field === fieldId);
+              return step && <s className="preview-was">{format(fieldId, step.before)}</s>;
+            };
             return (
-              <tr key={member.id} data-member-id={member.id}>
+              <tr
+                key={member.id}
+                data-member-id={member.id}
+                data-preview={stagedSteps.length > 0 || undefined}
+              >
                 <th scope="row" className="name-cell">
                   {member.name}
                 </th>
@@ -92,15 +106,19 @@ function TeamTable() {
                 <td className="muted">{member.location}</td>
                 <td>
                   <SettingSelect fieldId="role" defaultValue={settings.role} />
+                  {previousValue("role")}
                 </td>
                 <td>
                   <SettingSelect fieldId="seat" defaultValue={settings.seat} />
+                  {previousValue("seat")}
                 </td>
                 <td>
                   <SettingSwitch label={fields.deployAlerts.label} defaultChecked={settings.deployAlerts} />
+                  {previousValue("deployAlerts")}
                 </td>
                 <td>
                   <SettingSwitch label={fields.weeklyDigest.label} defaultChecked={settings.weeklyDigest} />
+                  {previousValue("weeklyDigest")}
                 </td>
               </tr>
             );

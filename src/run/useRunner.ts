@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
-import { agent, memberIdOfRef, readSettingsByMember } from "../bridge";
+import { agent, memberIdOfRef } from "../bridge";
 import { members, type Member } from "../data/members";
+import { readSettingsWithoutPreview, revertPreview } from "../preview/usePreview";
 import { changesFor, matches } from "../recipe/evaluate";
 import { plan } from "../recipe/plan";
 import type { Recipe } from "../recipe/schema";
@@ -15,13 +16,13 @@ type RunState =
 
 /**
  * Function to list who a run would change: matching members except the recorded one, minus anyone
- * who already has every value. Reads current values from a fresh snapshot.
+ * who already has every value. Reads current values from a fresh snapshot, ignoring any preview.
  * @param recipe The recipe.
  * @param recordedMemberId The member the recording came from; already done.
  * @returns The members to update, in table order.
  */
 function findRunTargets(recipe: Recipe, recordedMemberId: string): Member[] {
-  const settingsByMember = readSettingsByMember();
+  const settingsByMember = readSettingsWithoutPreview();
   return members.filter(
     (member) =>
       member.id !== recordedMemberId &&
@@ -44,6 +45,7 @@ function useRunner() {
    * @param recordedMemberId The member the recording came from; already done.
    */
   async function runRecipe(recipe: Recipe, recordedMemberId: string) {
+    await revertPreview();
     const targets = findRunTargets(recipe, recordedMemberId);
     stopRequested.current = false;
     let changedCount = 0;

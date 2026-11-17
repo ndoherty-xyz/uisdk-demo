@@ -33,19 +33,45 @@ async function rowValues(page: Page, memberId: string): Promise<Record<string, u
   }, memberId);
 }
 
-test("running a recipe gives every Design row the recipe's values", async ({ page }) => {
+/**
+ * Function to read every row but one from a fresh snapshot.
+ * @param page The page.
+ * @param exceptMemberId The row to leave out.
+ * @returns Ref, value and checked per component, in snapshot order.
+ */
+async function valuesExcept(page: Page, exceptMemberId: string): Promise<unknown[]> {
+  return page.evaluate((exceptId) => {
+    const { agent, memberIdOfRef } = window as unknown as DebugWindow;
+    return agent
+      .snapshot()
+      .filter((component) => memberIdOfRef(component.ref) !== exceptId)
+      .map((component) => [component.ref, component.value, component.checked]);
+  }, exceptMemberId);
+}
+
+/**
+ * Function to record Maya's three changes and make the fixed recipe, leaving the card showing.
+ * @param page The page.
+ */
+async function recordMayaAndMakeRecipe(page: Page) {
   await page.route("/api/recipe", (route) => route.fulfill({ json: { recipe, model: "fixed" } }));
   await page.goto("/");
   const bar = page.locator(".agent-bar");
-  const row = (id: string) => page.locator(`tr[data-member-id="${id}"]`);
+  const maya = page.locator('tr[data-member-id="maya"]');
 
   await bar.getByRole("button", { name: "Show me" }).click();
-  await row("maya").locator('[data-slot="select-trigger"]').first().click();
+  await maya.locator('[data-slot="select-trigger"]').first().click();
   await page.getByRole("option", { name: "Editor" }).click();
-  await row("maya").locator('[data-slot="switch"]').nth(0).click();
-  await row("maya").locator('[data-slot="switch"]').nth(1).click();
+  await maya.locator('[data-slot="switch"]').nth(0).click();
+  await maya.locator('[data-slot="switch"]').nth(1).click();
   await bar.getByRole("button", { name: "Done" }).click();
   await bar.getByRole("button", { name: "Make a recipe" }).click();
+  await expect(page.locator(".recipe-card")).toBeVisible();
+}
+
+test("running a recipe gives every Design row the recipe's values", async ({ page }) => {
+  await recordMayaAndMakeRecipe(page);
+  const bar = page.locator(".agent-bar");
   await bar.getByRole("button", { name: "Run on 4 more" }).click();
   await expect(bar).toContainText("Updated 4 people.", { timeout: 15_000 });
 
@@ -53,4 +79,30 @@ test("running a recipe gives every Design row the recipe's values", async ({ pag
     expect(await rowValues(page, id), id).toMatchObject({ Role: "editor", "Deploy alerts": false, "Weekly digest": true });
   }
   expect(await rowValues(page, "sam"), "sam").toMatchObject({ Role: "admin", "Deploy alerts": true, "Weekly digest": false });
+});
+
+test("an open recipe previews every row it would change, and closing it puts them back", async ({ page }) => {
+  await page.goto("/");
+  const before = await valuesExcept(page, "maya");
+  await recordMayaAndMakeRecipe(page);
+  const previewed = page.locator("tr[data-preview]");
+  const jonah = page.locator('tr[data-member-id="jonah"]');
+
+  await expect(previewed).toHaveCount(4);
+  await expect(jonah.locator(".preview-was")).toHaveText(["Viewer", "on", "off"]);
+  await expect.poll(() => rowValues(page, "jonah")).toMatchObject({ Role: "editor", "Deploy alerts": false, "Weekly digest": true });
+  // Staged rows still count as targets.
+  await expect(page.getByRole("button", { name: "Run on 4 more" })).toBeVisible();
+
+  // Narrowing the recipe narrows the preview: Priya is the only Design lead.
+  const valueInput = page.locator(".recipe-card .clause input");
+  await page.locator(".recipe-card .clause select").first().selectOption("title");
+  await valueInput.fill("Design lead");
+  await valueInput.blur();
+  await expect(previewed).toHaveCount(1);
+  await expect(page.locator('tr[data-member-id="priya"]')).toHaveAttribute("data-preview");
+
+  await page.locator(".agent-bar").getByRole("button", { name: "Start over" }).click();
+  await expect(previewed).toHaveCount(0);
+  await expect.poll(() => valuesExcept(page, "maya")).toEqual(before);
 });
