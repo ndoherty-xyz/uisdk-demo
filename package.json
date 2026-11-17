@@ -13,7 +13,8 @@
     "build": "tsc && vite build",
     "typecheck": "tsc",
     "test": "vitest run",
-    "eval": "tsx --env-file-if-exists=.env eval/run.ts"
+    "eval": "tsx --env-file-if-exists=.env eval/run.ts",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

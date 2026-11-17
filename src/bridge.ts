@@ -11,8 +11,8 @@ const history = createHistory(agent, {
   keys: ["value", "checked"],
 });
 
-// `window.history` is the browser's, so the ui-sdk history goes on `uiHistory`.
-Object.assign(window, { agent, uiHistory: history });
+// For the console and e2e tests. `window.history` is the browser's, so the ui-sdk one is `uiHistory`.
+Object.assign(window, { agent, uiHistory: history, memberIdOfRef });
 
 /**
  * Function to find which member's row a component sits in, via the row's `data-member-id`.

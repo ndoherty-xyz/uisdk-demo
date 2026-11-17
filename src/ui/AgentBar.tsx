@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { fields } from "../data/fields";
-import { memberById, members } from "../data/members";
-import { matches } from "../recipe/evaluate";
+import { memberById } from "../data/members";
 import { requestRecipe } from "../recipe/requestRecipe";
 import type { Recipe } from "../recipe/schema";
 import type { Recording } from "../record/recording";
 import { useRecorder } from "../record/useRecorder";
+import { findRunTargets, useRunner } from "../run/useRunner";
 import { format } from "./format";
 import { RecipeCard } from "./RecipeCard";
 
@@ -44,6 +44,7 @@ function AgentBar() {
   const [recipeVersion, setRecipeVersion] = useState(0);
   const [isMaking, setIsMaking] = useState(false);
   const [recipeError, setRecipeError] = useState<string | null>(null);
+  const { runState, runRecipe, stopRun, resetRunner } = useRunner();
 
   // Development only: prefill the model picker with the server's default.
   useEffect(() => {
@@ -56,6 +57,7 @@ function AgentBar() {
   /** Function to drop the recording and any recipe and go back to idle. */
   function startOver() {
     resetRecorder();
+    resetRunner();
     setHint("");
     setRecipe(null);
     setRecipeError(null);
@@ -75,12 +77,12 @@ function AgentBar() {
     setRecipeVersion((version) => version + 1);
   }
 
-  const recordedMemberId = state.phase === "recorded" ? state.recording.memberId : undefined;
-  const runCount = recipe ? members.filter((member) => member.id !== recordedMemberId && matches(recipe, member)).length : 0;
+  // Recomputed on every table change: useRecorder re-renders the bar when history moves.
+  const runCount = state.phase === "recorded" && recipe ? findRunTargets(recipe, state.recording.memberId).length : 0;
 
   return (
     <div className="agent-dock" data-agent-hidden>
-      {state.phase === "recorded" && recipe && (
+      {state.phase === "recorded" && recipe && runState.phase === "idle" && (
         <RecipeCard
           key={recipeVersion}
           recipe={recipe}
@@ -132,7 +134,35 @@ function AgentBar() {
           </>
         )}
 
-        {state.phase === "recorded" && (
+        {runState.phase === "running" && (
+          <>
+            <p className="bar-message" role="status">
+              Updating <strong>{runState.member.name}</strong>
+              <span className="muted">
+                {" "}
+                {runState.index + 1} of {runState.total}
+              </span>
+            </p>
+            <button type="button" className="button" disabled={runState.stopping} onClick={stopRun}>
+              {runState.stopping ? "Stopping…" : "Stop"}
+            </button>
+          </>
+        )}
+
+        {runState.phase === "finished" && (
+          <>
+            <p className="bar-message" role="status">
+              {runState.stopped ? "Stopped. " : ""}Updated {runState.changedCount}{" "}
+              {runState.changedCount === 1 ? "person" : "people"}.
+              {runState.failedStepCount > 0 && ` ${runState.failedStepCount} changes couldn't be made.`}
+            </p>
+            <button type="button" className="button primary" onClick={startOver}>
+              Start over
+            </button>
+          </>
+        )}
+
+        {state.phase === "recorded" && runState.phase === "idle" && (
           <div className="bar-recorded">
             <div className="bar-row">
               <p className="bar-message">
@@ -167,7 +197,12 @@ function AgentBar() {
                 Start over
               </button>
               {recipe ? (
-                <button type="button" className="button primary" disabled title="Arrives in M3">
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={isMaking || runCount === 0}
+                  onClick={() => runRecipe(recipe, state.recording.memberId)}
+                >
                   Run on {runCount} more
                 </button>
               ) : (
