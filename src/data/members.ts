@@ -41,5 +41,7 @@ const initialSettings: Record<Member["id"], Settings> = {
   ben: { role: "editor", seat: "full", deployAlerts: true, weeklyDigest: true },
 };
 
-export { initialSettings, members };
+const memberById = new Map(members.map((member) => [member.id, member]));
+
+export { initialSettings, memberById, members };
 export type { Member, Team };

@@ -33,5 +33,15 @@ type Settings = {
 
 const fieldIds = Object.keys(fields) as FieldId[];
 
-export { fieldIds, fields };
+/**
+ * Function to map a bridge label ("Role") back to its field id. Every control in the table has
+ * one of the registry's labels.
+ * @param label The component's label from a snapshot or history entry.
+ * @returns The field id.
+ */
+function fieldIdOfLabel(label: string): FieldId {
+  return fieldIds.find((id) => fields[id].label === label)!;
+}
+
+export { fieldIdOfLabel, fieldIds, fields };
 export type { FieldId, SelectFieldId, Settings };

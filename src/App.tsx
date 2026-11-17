@@ -1,7 +1,8 @@
+import { AgentBar } from "./ui/AgentBar";
 import { TeamTable } from "./ui/TeamTable";
 
 /**
- * Function to render the whole page: the team table and, later, the agent bar.
+ * Function to render the whole page: the team table and the floating agent bar.
  * @returns The page.
  */
 function App() {
@@ -12,6 +13,7 @@ function App() {
         <p>12 people · settings change as soon as you edit them</p>
       </header>
       <TeamTable />
+      <AgentBar />
     </main>
   );
 }
