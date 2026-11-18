@@ -7,12 +7,13 @@ import { matches } from "../recipe/evaluate";
 import { requestRecipe } from "../recipe/requestRecipe";
 import type { Clause, Recipe } from "../recipe/schema";
 import type { Recording } from "../record/recording";
-import { useNudge, type Nudge } from "../record/useNudge";
+import { useNudge } from "../record/useNudge";
 import { findRunTargets, useRunner } from "../run/useRunner";
 import agentAvatarUrl from "../assets/agent.png";
 import { GhostCursor } from "./GhostCursor";
 import { RunHistory } from "./RunHistory";
 import { readTableQuery, readVisibleMembers, subscribeTableQuery } from "./tableVirtualizer";
+import { playSound } from "../sounds/sounds";
 import { format } from "./format";
 
 const attributeLabels = { team: "Team", title: "Title", location: "Location" };
@@ -72,33 +73,24 @@ function StepChips({ steps }: { steps: Recipe["steps"] }) {
  */
 function AgentPanel() {
   const [isOpen, setIsOpen] = useState(false);
-  const [model, setModel] = useState("");
-  // The offer the person opened, with the recipe as last made from their words.
-  const [pattern, setPattern] = useState<Nudge | null>(null);
-  const [audienceText, setAudienceText] = useState("");
+  // The offer the person opened, or a rule they asked for in words (no examples), as last edited.
+  const [pattern, setPattern] = useState<{ examples: Recording[]; recipe: Recipe } | null>(null);
+  const [instructionText, setInstructionText] = useState("");
   const [isMaking, setIsMaking] = useState(false);
   const [recipeError, setRecipeError] = useState<string | null>(null);
   const { runState, runs, runRecipe, stopRun, resetRunner, clearRuns } = useRunner();
-  const { spottedExamples, nudge, dismissNudge } = useNudge(pattern === null && runState.phase === "idle", model);
+  const { spottedExamples, nudge, dismissNudge } = useNudge(pattern === null && runState.phase === "idle");
   // Counts follow the table's values and filters as they change.
   useSyncExternalStore(subscribeSettings, readSettingsVersion);
   const tableQuery = useSyncExternalStore(subscribeTableQuery, readTableQuery);
 
-  // Development only: prefill the model picker with the server's default.
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    fetch("/api/config")
-      .then((response) => response.json() as Promise<{ model: string }>)
-      .then((config) => setModel((current) => current || config.model));
-  }, []);
-
   const isPreviewing = isOpen && pattern !== null && runState.phase === "idle";
   useEffect(() => previewRecipe(isPreviewing ? pattern.recipe : null), [isPreviewing, pattern]);
 
-  /** Function to open the offered pattern, ready for the person to say who should get it. */
+  /** Function to open the offered pattern, ready for the person to adjust it. */
   function openNudge() {
     setPattern(nudge);
-    setAudienceText(nudge!.recipe.audience);
+    setInstructionText("");
     setRecipeError(null);
     dismissNudge();
   }
@@ -106,6 +98,8 @@ function AgentPanel() {
   /** Function to close the opened pattern and forget any finished run. */
   function closePattern() {
     setPattern(null);
+    setInstructionText("");
+    setRecipeError(null);
     resetRunner();
   }
 
@@ -116,18 +110,21 @@ function AgentPanel() {
   }
 
   /**
-   * Function to remake the recipe from the person's description of who should get it.
+   * Function to make or edit the recipe from the person's words: who gets it, what changes, or both.
    * @param event The form submit.
    */
   async function updateRule(event: FormEvent) {
     event.preventDefault();
     setIsMaking(true);
     setRecipeError(null);
-    const result = await requestRecipe(pattern!.examples, audienceText, model);
+    const result = await requestRecipe(pattern?.examples ?? [], instructionText, pattern?.recipe);
     setIsMaking(false);
-    if ("error" in result) return setRecipeError(result.error);
-    setPattern((current) => current && { ...current, recipe: result.recipe });
-    setAudienceText(result.recipe.audience);
+    if ("error" in result) {
+      playSound.error();
+      return setRecipeError(result.error);
+    }
+    setPattern((current) => ({ examples: current?.examples ?? [], recipe: result.recipe }));
+    setInstructionText("");
   }
 
   const nudgeRunCount = nudge ? findRunTargets(nudge.recipe).length : 0;
@@ -142,7 +139,7 @@ function AgentPanel() {
     tableQuery.location && `Location is ${tableQuery.location}`,
     tableQuery.search.trim() && `Name or title has “${tableQuery.search.trim()}”`,
   ].filter((text): text is string => Boolean(text) && !ruleTexts.includes(text as string));
-  const isAudienceEdited = pattern !== null && audienceText.trim() !== pattern.recipe.audience;
+  const hasInstruction = instructionText.trim() !== "";
   const view =
     runState.phase !== "idle"
       ? runState.phase
@@ -153,6 +150,15 @@ function AgentPanel() {
           : spottedExamples
             ? "spotted"
             : "idle";
+
+  const isOffering = view === "offer";
+  const isFinishedRun = runState.phase === "finished" && !runState.stopped;
+  useEffect(() => {
+    if (isOffering) playSound.notification();
+  }, [isOffering]);
+  useEffect(() => {
+    if (isFinishedRun) playSound.success();
+  }, [isFinishedRun]);
 
   if (!isOpen) {
     return (
@@ -204,10 +210,6 @@ function AgentPanel() {
         </header>
 
         <div className="agent-panel-body">
-          {view === "idle" && (
-            <p className="muted">Change a couple of rows the same way and I'll offer to do the rest.</p>
-          )}
-
           {view === "spotted" && (
             <p role="status">
               Noticed a pattern in <strong>{exampleNames(spottedExamples!)}</strong>. Working out the rest…
@@ -231,68 +233,87 @@ function AgentPanel() {
             </>
           )}
 
-          {view === "pattern" && (
+          {(view === "idle" || view === "pattern") && (
             <form className="agent-pattern" aria-busy={isMaking} onSubmit={updateRule}>
-              <p>
-                You gave <strong>{exampleNames(pattern!.examples)}</strong>
-              </p>
-              <StepChips steps={pattern!.recipe.steps} />
               <label className="agent-field">
-                <span>Who should get this?</span>
+                <span>What do you want to do?</span>
                 <input
                   className="hint-input"
-                  value={audienceText}
-                  onChange={(event) => setAudienceText(event.target.value)}
+                  placeholder={
+                    pattern ? "e.g. only Seattle, also turn on deploy alerts" : "e.g. make designers in Seattle editors"
+                  }
+                  value={instructionText}
+                  onChange={(event) => setInstructionText(event.target.value)}
                 />
               </label>
-              <ul className="chips" aria-label="Rule">
-                {ruleTexts.map((text) => (
-                  <li key={text} className="chip" data-tone="agent">
-                    {text}
-                  </li>
-                ))}
-                {tableFilterTexts.map((text) => (
-                  <li key={text} className="chip" data-tone="agent" data-source="table">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" role="img" aria-label="Table filter">
-                      <path d="M2.5 3.5h11l-4.25 5v4l-2.5 1.5v-5.5z" stroke="currentColor" strokeWidth="1.5" />
-                    </svg>
-                    {text}
-                  </li>
-                ))}
-                {ruleTexts.length === 0 && tableFilterTexts.length === 0 && (
-                  <li className="chip" data-tone="agent">
-                    Everyone
-                  </li>
-                )}
-              </ul>
-              <p className="agent-match-count muted">
-                Matches {matchCount.toLocaleString()} {matchCount === 1 ? "person" : "people"}
-              </p>
-              {import.meta.env.DEV && (
-                <input
-                  className="model-input"
-                  aria-label="Model"
-                  title="OpenRouter model (development only)"
-                  value={model}
-                  onChange={(event) => setModel(event.target.value)}
-                />
+              {pattern ? (
+                <>
+                  <section className="agent-section">
+                    <h3>Changes</h3>
+                    {pattern.examples.length > 0 && (
+                      <p className="muted">Copied from {exampleNames(pattern.examples)}</p>
+                    )}
+                    <StepChips steps={pattern.recipe.steps} />
+                  </section>
+                  <section className="agent-section">
+                    <h3>Rule</h3>
+                    <ul className="chips" aria-label="Rule">
+                      {ruleTexts.map((text) => (
+                        <li key={text} className="chip" data-tone="agent">
+                          {text}
+                        </li>
+                      ))}
+                      {tableFilterTexts.map((text) => (
+                        <li key={text} className="chip" data-tone="agent" data-source="table">
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            role="img"
+                            aria-label="Table filter"
+                          >
+                            <path d="M2.5 3.5h11l-4.25 5v4l-2.5 1.5v-5.5z" stroke="currentColor" strokeWidth="1.5" />
+                          </svg>
+                          {text}
+                        </li>
+                      ))}
+                      {ruleTexts.length === 0 && tableFilterTexts.length === 0 && (
+                        <li className="chip" data-tone="agent">
+                          Everyone
+                        </li>
+                      )}
+                    </ul>
+                    <p className="muted">
+                      Matches {matchCount.toLocaleString()} {matchCount === 1 ? "person" : "people"}
+                    </p>
+                  </section>
+                </>
+              ) : (
+                <p className="muted">Or change a couple of rows the same way and I'll offer to do the rest.</p>
               )}
               <div className="agent-actions">
-                <button type="button" className="button" onClick={closePattern}>
-                  Cancel
-                </button>
-                {isAudienceEdited ? (
-                  <button type="submit" className="button primary" disabled={isMaking || !audienceText.trim()}>
-                    {isMaking ? "Updating…" : "Update rule"}
+                {pattern && (
+                  <button type="button" className="button" onClick={closePattern}>
+                    Cancel
+                  </button>
+                )}
+                {hasInstruction || !pattern ? (
+                  <button type="submit" className="button primary" disabled={isMaking || !hasInstruction}>
+                    {isMaking ? "Working…" : pattern ? "Update" : "Make rule"}
                   </button>
                 ) : (
                   <button
                     type="button"
                     className="button primary"
                     disabled={runCount === 0}
-                    onClick={() => runRecipe(pattern!.recipe)}
+                    onClick={() => {
+                      playSound.send();
+                      runRecipe(pattern.recipe);
+                    }}
                   >
-                    Run on {runCount.toLocaleString()} more
+                    Run on {runCount.toLocaleString()}{" "}
+                    {pattern.examples.length > 0 ? "more" : runCount === 1 ? "person" : "people"}
                   </button>
                 )}
               </div>

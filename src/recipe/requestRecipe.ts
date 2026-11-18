@@ -9,14 +9,14 @@ const giveUpMessage = "Couldn't make a recipe from that. Try a hint like 'everyo
  * Function to ask the server for a recipe from one or more recordings of the same change, and
  * validate the answer.
  * @param recordings One recording per example row.
- * @param hint Who to apply it to, in the person's words; may be empty.
- * @param model OpenRouter slug; empty for the server default.
+ * @param hint What the person wants, in their own words; may be empty.
+ * @param currentRecipe The recipe the hint edits, if there is one.
  * @returns The recipe, or an error to show in the bar.
  */
 async function requestRecipe(
   recordings: Recording[],
   hint: string,
-  model: string,
+  currentRecipe?: Recipe,
 ): Promise<{ recipe: Recipe } | { error: string }> {
   const request: RecipeRequest = {
     recorded: recordings.map((recording) => ({
@@ -26,7 +26,7 @@ async function requestRecipe(
     attributeValueCounts,
     fields,
     ...(hint.trim() && { hint: hint.trim() }),
-    ...(model.trim() && { model: model.trim() }),
+    ...(currentRecipe && { current: currentRecipe }),
   };
   try {
     const response = await fetch("/api/recipe", {

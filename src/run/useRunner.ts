@@ -10,10 +10,10 @@ import { flashChangedCell, hideGhostCursor, moveGhostCursor } from "../ui/GhostC
 import { readVisibleMembers, scrollToMember } from "../ui/tableVirtualizer";
 
 /** Pause after each change of the first rows, so it's readable. */
-const stepPauseMs = 180;
+const stepPauseMs = 100;
 /** Rows shown change by change; the rest go a row at a time, quicker and quicker. */
 const animatedRowCount = 3;
-const animatedGlideMs = 450;
+const animatedGlideMs = 300;
 const batchGlideMs = { first: 200, fastest: 90, speedUpPerRow: 10 };
 
 type RunState =

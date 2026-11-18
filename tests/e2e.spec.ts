@@ -91,7 +91,7 @@ async function changeRowByHand(page: Page, memberId: string) {
 
 /**
  * Function to change Maya and Sam the same way by hand, then accept the offer, leaving the
- * "Who should get this?" panel open.
+ * pattern panel open.
  * @param page The page.
  * @param madeRecipe The recipe the mocked model returns.
  */
@@ -141,11 +141,11 @@ test("the panel shows the rule as chips, previews rows from data, and remakes th
   await page.route("/api/recipe", (route) => route.fulfill({ json: { recipe: austinRecipe, model: "fixed" } }));
   const before = await allValues(page);
   const panel = page.locator(".agent-pattern");
-  const audience = panel.getByLabel("Who should get this?");
+  const instruction = panel.getByLabel("What do you want to do?");
   const previewed = page.locator("tr[data-preview]");
   const jonah = page.locator('tr[data-member-id="jonah"]');
 
-  await expect(audience).toHaveValue("designers in Seattle");
+  await expect(instruction).toHaveValue("");
   await expect(panel.getByRole("list", { name: "Rule" }).getByRole("listitem")).toHaveText([
     "Team is Design",
     "Location is Seattle",
@@ -157,8 +157,8 @@ test("the panel shows the rule as chips, previews rows from data, and remakes th
   expect(await rowValues(page, "jonah")).toMatchObject({ role: "viewer", deployAlerts: true, weeklyDigest: false });
 
   // New words remake the rule, settings included: Priya is Austin's admin, so she's left out.
-  await audience.fill("designers in Austin except admins");
-  await panel.getByRole("button", { name: "Update rule" }).click();
+  await instruction.fill("only Austin, and skip admins");
+  await panel.getByRole("button", { name: "Update" }).click();
   await expect(panel.getByRole("list", { name: "Rule" }).getByRole("listitem")).toHaveText([
     "Team is Design",
     "Location is Austin",
@@ -265,7 +265,7 @@ test("changing two rows the same way by hand offers to automate it, once", async
   await scrollTableToTop(page);
   await changeRowByHand(page, "p13");
   await page.waitForTimeout(2500);
-  await expect(panel).toContainText("Change a couple of rows the same way");
+  await expect(panel).toContainText("change a couple of rows the same way");
   expect(requests).toHaveLength(1);
 });
 

@@ -1,13 +1,11 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { RecipeRequest, RecipeResponse } from "../src/recipe/schema";
-import { defaultModel, proposeRecipe } from "./model";
+import { proposeRecipe } from "./model";
 
 const isDev = process.env.NODE_ENV !== "production";
 
 const app = new Hono();
-
-app.get("/api/config", (c) => c.json({ model: defaultModel }));
 
 app.post("/api/recipe", async (c) => {
   const { model, ...request } = await c.req.json<RecipeRequest>();

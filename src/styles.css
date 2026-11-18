@@ -494,8 +494,20 @@ body {
   opacity: 0.5;
 }
 
-.agent-panel-body .agent-match-count {
-  margin-top: -6px;
+.agent-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-section h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.agent-section .muted {
   font-size: 13px;
 }
 
@@ -597,16 +609,6 @@ body {
   background: var(--bg);
   color: inherit;
   font: inherit;
-}
-
-.model-input {
-  padding: 6px 10px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 12px;
 }
 
 .link-button,

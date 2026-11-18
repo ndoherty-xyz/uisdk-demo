@@ -6,6 +6,7 @@ import { attributeValueCounts, members, type Member, type Team } from "../data/m
 import { readSettings, readSettingsVersion, subscribeSettings, writeSetting } from "../data/settingsStore";
 import { usePreviewedRecipe } from "../preview/usePreview";
 import { changesFor, matches } from "../recipe/evaluate";
+import { playSound } from "../sounds/sounds";
 import { format } from "./format";
 import {
   readTableQuery,
@@ -105,7 +106,14 @@ function FilterSelect({
 }) {
   const items = [{ value: "", label: allLabel }, ...values.map((option) => ({ value: option, label: option }))];
   return (
-    <Select value={value ?? ""} items={items} onValueChange={(next) => onChange((next as string) || null)}>
+    <Select
+      value={value ?? ""}
+      items={items}
+      onValueChange={(next) => {
+        playSound.select();
+        onChange((next as string) || null);
+      }}
+    >
       <SelectLabel className="visually-hidden">{label}</SelectLabel>
       <SelectTrigger className="select-trigger" data-active={value !== null || undefined}>
         <SelectValue />
@@ -158,7 +166,10 @@ function TableToolbar({ tableQuery, visibleCount }: { tableQuery: TableQuery; vi
         <button
           type="button"
           className="text-button"
-          onClick={() => setTableQuery({ ...unfilteredQuery, sort: tableQuery.sort })}
+          onClick={() => {
+            playSound.tap();
+            setTableQuery({ ...unfilteredQuery, sort: tableQuery.sort });
+          }}
         >
           Clear
         </button>
@@ -189,7 +200,10 @@ function SortableHeader({ column, label, tableQuery }: { column: SortColumn; lab
         type="button"
         className="sort-button"
         data-direction={direction ?? undefined}
-        onClick={() => setTableQuery({ ...tableQuery, sort: nextSort })}
+        onClick={() => {
+          playSound.tap();
+          setTableQuery({ ...tableQuery, sort: nextSort });
+        }}
       >
         {label}
         <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">

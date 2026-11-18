@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { agent, history, memberIdOfEntry, queryMemberControls } from "../bridge";
 import { fieldIdOfLabel, fields } from "../data/fields";
 import { memberById, type Member } from "../data/members";
+import { playSound } from "../sounds/sounds";
 import { findSupersedingEntry, planUndo, type HistoryView, type KeptEntry } from "../run/revert";
 import type { AgentRun, RunTurn } from "../run/useRunner";
 import { format } from "./format";
@@ -216,6 +217,7 @@ function RunHistory({ runs, isRunning, onClear }: { runs: AgentRun[]; isRunning:
       historyView,
       removedEntryIds,
     );
+    playSound.undo();
     setKeptMessages(undoPlan.keep.map((keptEntry) => describeKept(keptEntry, memberByEntryId.get(keptEntry.kept.id)!)));
     await revertEntries(undoPlan.revert);
   }

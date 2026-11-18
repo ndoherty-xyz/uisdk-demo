@@ -6,24 +6,24 @@ import { requestRecipe } from "../recipe/requestRecipe";
 import type { Recipe } from "../recipe/schema";
 import { findRepeatedChange, type Recording } from "./recording";
 
-/** Wait this long after the person's last change, in case they're still editing that row. */
-const detectDelayMs = 800;
+/** A pause this long after the person's last change ends their edits, and only then is it checked. */
+const breakMs = 1500;
 
 /** Two rows changed the same way by hand, with a recipe already made from them. */
 type Nudge = { examples: [Recording, Recording]; recipe: Recipe };
 
 /**
- * Function to watch for the person leaving two rows in the same end state by hand and, once
- * found, make a recipe from both in the background so the offer arrives ready. Each change set is
- * offered at most once per session.
+ * Function to watch for the person leaving two rows in the same end state by hand and, at the next
+ * pause, make a recipe from both in the background so the offer arrives ready. Each change set is
+ * offered at most once per session, and rows edited before an offer don't count towards the next.
  * @param isWatching Whether the bar is idle, so a nudge could show.
- * @param model OpenRouter slug for the recipe; empty for the server default.
  * @returns The examples spotted while their recipe is being made, the ready nudge, and a way to drop it.
  */
-function useNudge(isWatching: boolean, model: string) {
+function useNudge(isWatching: boolean) {
   const [spottedExamples, setSpottedExamples] = useState<[Recording, Recording] | null>(null);
   const [nudge, setNudge] = useState<Nudge | null>(null);
   const offeredKeys = useRef(new Set<string>());
+  const lastSpottedAt = useRef(0);
 
   useEffect(() => {
     if (!isWatching) return;
@@ -36,7 +36,7 @@ function useNudge(isWatching: boolean, model: string) {
      */
     async function detectRepeatedChange(entries: HistoryEntry[]) {
       const repeated = findRepeatedChange(
-        entries,
+        entries.filter((entry) => entryTimes.get(entry.id)! > lastSpottedAt.current),
         (entryId) => entryTimes.get(entryId)!,
         memberIdOfEntry,
         readSettings,
@@ -44,8 +44,9 @@ function useNudge(isWatching: boolean, model: string) {
       );
       if (!repeated) return;
       offeredKeys.current.add(repeated.key);
+      lastSpottedAt.current = Date.now();
       setSpottedExamples(repeated.recordings);
-      const result = await requestRecipe(repeated.recordings, "", model);
+      const result = await requestRecipe(repeated.recordings, "");
       if (isCancelled) return;
       setSpottedExamples(null);
       if ("recipe" in result) setNudge({ examples: repeated.recordings, recipe: result.recipe });
@@ -56,13 +57,7 @@ function useNudge(isWatching: boolean, model: string) {
       const latestEntry = entries.at(-1);
       if (!latestEntry || latestEntry.source === "agent") return;
       clearTimeout(detectTimer);
-      // Moving on to another row finishes the last one, so check now, leaving out the row just started.
-      const latestMemberId = memberIdOfEntry(latestEntry);
-      const previousEntry = entries.at(-2);
-      if (previousEntry && memberIdOfEntry(previousEntry) !== latestMemberId) {
-        detectRepeatedChange(entries.filter((entry) => memberIdOfEntry(entry) !== latestMemberId));
-      }
-      detectTimer = setTimeout(() => detectRepeatedChange(entries), detectDelayMs);
+      detectTimer = setTimeout(() => detectRepeatedChange(entries), breakMs);
     });
     return () => {
       isCancelled = true;
@@ -70,7 +65,7 @@ function useNudge(isWatching: boolean, model: string) {
       clearTimeout(detectTimer);
       unsubscribe();
     };
-  }, [isWatching, model]);
+  }, [isWatching]);
 
   /** Function to drop the nudge; its change set stays offered. */
   function dismissNudge() {

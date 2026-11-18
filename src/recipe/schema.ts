@@ -73,7 +73,10 @@ type RecipeRequest = {
   /** How many people have each team, title and location. */
   attributeValueCounts: Record<"team" | "title" | "location", Record<string, number>>;
   fields: typeof fields;
+  /** What the person wants, in their own words: who gets it, what changes, or both. */
   hint?: string;
+  /** The recipe as it stands, which the hint edits. */
+  current?: Recipe;
   /** OpenRouter slug; the server's default when absent. */
   model?: string;
 };

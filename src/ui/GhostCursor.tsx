@@ -1,5 +1,6 @@
 import { elementOf } from "@ui-sdk/react/observe";
 import agentAvatarUrl from "../assets/agent.png";
+import { playSound } from "../sounds/sounds";
 
 const pressMs = 120;
 const hideDelayMs = 1500;
@@ -44,6 +45,7 @@ async function moveGhostCursor(ref: string, glideMs: number): Promise<void> {
   cursor.style.transform = toTransform;
   // Only unhurried moves press; quick ones just point.
   if (glideMs < pressMs * 2) return;
+  playSound.tap();
   await cursor
     .querySelector(".ghost-cursor-arrow")!
     .animate([{ scale: 1 }, { scale: 0.9 }, { scale: 1 }], { duration: pressMs, easing: "ease-out" }).finished;
