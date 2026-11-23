@@ -18,7 +18,23 @@ function logToServer(...parts: unknown[]) {
 }
 
 /** No "speech done" event exists, so speaking ends this long after the last output delta. */
-const speakingQuietMs = 600;
+const speakingQuietMs = 900;
+/** Captions fade out after this long with nothing said. */
+const captionsQuietMs = 6000;
+/** How long the captions' fade-out runs before they clear. */
+const captionsFadeMs = 160;
+
+/**
+ * Function to turn a failed start into short copy for the pill; the raw error goes to the log.
+ * @param error What `connectLive` threw.
+ * @returns The message to show.
+ */
+function describeStartError(error: unknown): string {
+  const name = error instanceof Error ? error.name : "";
+  if (name === "NotAllowedError") return "Mic blocked. Allow it in the browser.";
+  if (name === "NotFoundError") return "No mic found.";
+  return "Couldn't start voice. Try again.";
+}
 
 /**
  * Function to run a voice session: connect, answer the backend's tool calls one at a time, and
@@ -30,6 +46,7 @@ function useVoiceSession(runner: Runner) {
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [captions, setCaptions] = useState({ person: "", agent: "" });
+  const [areCaptionsFading, setAreCaptionsFading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const connectionRef = useRef<LiveConnection | null>(null);
   const runnerRef = useRef(runner);
@@ -41,6 +58,50 @@ function useVoiceSession(runner: Runner) {
   const toolQueueRef = useRef(Promise.resolve());
   const openCallCountRef = useRef(0);
   const speakingTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const captionsTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // A new caption line starts after the agent pauses, and after the person speaks once the agent has.
+  const isAgentLineDoneRef = useRef(true);
+  const hasAgentSpokenRef = useRef(false);
+  // Bumped on each start and end, so a connect that resolves after End is closed, not used.
+  const connectAttemptRef = useRef(0);
+
+  /** Function to clear captions, the speech behind them, and any error, for a fresh session. */
+  function resetTranscripts() {
+    clearTimeout(speakingTimerRef.current);
+    clearTimeout(captionsTimerRef.current);
+    clearTimeout(errorTimerRef.current);
+    utteranceRef.current = "";
+    agentSpeechRef.current = "";
+    isAgentLineDoneRef.current = true;
+    hasAgentSpokenRef.current = false;
+    setCaptions({ person: "", agent: "" });
+    setAreCaptionsFading(false);
+    setErrorMessage(null);
+  }
+
+  /** Function to (re)start the countdown after which quiet captions fade out and clear. */
+  function scheduleCaptionsFade() {
+    setAreCaptionsFading(false);
+    clearTimeout(captionsTimerRef.current);
+    captionsTimerRef.current = setTimeout(() => {
+      setAreCaptionsFading(true);
+      captionsTimerRef.current = setTimeout(() => {
+        setCaptions({ person: "", agent: "" });
+        setAreCaptionsFading(false);
+      }, captionsFadeMs);
+    }, captionsQuietMs);
+  }
+
+  /**
+   * Function to show an error that clears itself after a few seconds.
+   * @param message The short message to show.
+   */
+  function showPassingError(message: string) {
+    setErrorMessage(message);
+    clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => setErrorMessage(null), 5000);
+  }
 
   /**
    * Function to handle one server event: captions, status, and tool calls.
@@ -61,15 +122,22 @@ function useVoiceSession(runner: Runner) {
         logToServer("closed", event.reason);
         connectionRef.current?.close();
         connectionRef.current = null;
+        resetTranscripts();
         setStatus("idle");
+        if (event.reason !== "close_requested") showPassingError("Voice ended. Start again to keep talking.");
         break;
       case "error":
         logToServer("error", event.error);
-        setErrorMessage(event.error.message);
+        showPassingError("Something went wrong. Try again.");
         break;
       case "session.input_transcript.delta":
+        if (hasAgentSpokenRef.current) {
+          utteranceRef.current = "";
+          hasAgentSpokenRef.current = false;
+        }
         utteranceRef.current += event.delta;
         setCaptions({ person: utteranceRef.current.trim(), agent: "" });
+        scheduleCaptionsFade();
         break;
       case "session.delegation.created":
         logToServer("person:", utteranceRef.current.trim());
@@ -77,17 +145,23 @@ function useVoiceSession(runner: Runner) {
         utteranceRef.current = "";
         setStatus("working");
         break;
-      case "session.output_transcript.delta":
-        setCaptions((current) => ({ ...current, agent: `${current.agent}${event.delta}` }));
+      case "session.output_transcript.delta": {
+        const isNewLine = isAgentLineDoneRef.current;
+        isAgentLineDoneRef.current = false;
+        hasAgentSpokenRef.current = true;
+        setCaptions((current) => ({ ...current, agent: isNewLine ? event.delta : `${current.agent}${event.delta}` }));
+        scheduleCaptionsFade();
         agentSpeechRef.current += event.delta;
         if (openCallCountRef.current === 0) setStatus("speaking");
         clearTimeout(speakingTimerRef.current);
         speakingTimerRef.current = setTimeout(() => {
           logToServer("voice said:", agentSpeechRef.current.trim());
           agentSpeechRef.current = "";
+          isAgentLineDoneRef.current = true;
           setStatus((current) => (current === "speaking" ? "listening" : current));
         }, speakingQuietMs);
         break;
+      }
       case "response.event": {
         const inner = event.event as { type: string; item?: FunctionCallItem | { type: string } };
         if (inner.type === "response.output_item.done" && inner.item?.type === "function_call") {
@@ -128,26 +202,37 @@ function useVoiceSession(runner: Runner) {
 
   /** Function to ask for the mic and open a session. */
   async function startVoice() {
+    const attempt = ++connectAttemptRef.current;
+    resetTranscripts();
     setStatus("connecting");
-    setErrorMessage(null);
+    setIsMuted(false);
     try {
-      connectionRef.current = await connectLive(handleServerEvent);
-      setIsMuted(false);
+      const connection = await connectLive(handleServerEvent);
+      if (attempt !== connectAttemptRef.current) {
+        connection.send({ type: "session.close" });
+        connection.close();
+        return;
+      }
+      connectionRef.current = connection;
     } catch (error) {
+      if (attempt !== connectAttemptRef.current) return;
+      logToServer("start failed", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
       setStatus("error");
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      setErrorMessage(describeStartError(error));
     }
   }
 
-  /** Function to end the session; the connection drops when `session.closed` arrives, or after 3 s. */
+  /** Function to end the session, or cancel one still connecting; the connection drops when `session.closed` arrives, or after 3 s. */
   function endVoice() {
+    connectAttemptRef.current++;
     const connection = connectionRef.current;
-    if (!connection) return;
-    connection.send({ type: "session.close" });
-    setTimeout(() => connection.close(), 3000);
+    if (connection) {
+      connection.send({ type: "session.close" });
+      setTimeout(() => connection.close(), 3000);
+    }
     connectionRef.current = null;
+    resetTranscripts();
     setStatus("idle");
-    setCaptions({ person: "", agent: "" });
   }
 
   /** Function to turn the mic off or on without ending the session. */
@@ -158,7 +243,7 @@ function useVoiceSession(runner: Runner) {
     setIsMuted(!isMuted);
   }
 
-  return { status, errorMessage, captions, isMuted, startVoice, endVoice, toggleMute };
+  return { status, errorMessage, captions, areCaptionsFading, isMuted, startVoice, endVoice, toggleMute };
 }
 
 export { useVoiceSession };

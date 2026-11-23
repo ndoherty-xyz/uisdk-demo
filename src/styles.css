@@ -13,6 +13,8 @@
   --track: #d6d3d1;
   --agent: #7c4dcc;
   --removed: #a8a29e;
+  --danger: #b91c1c;
+  --danger-bg: rgb(220 38 38 / 0.12);
   --radius: 8px;
   --shadow: 0 12px 32px -8px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.06);
   --font: "Allo", system-ui, sans-serif;
@@ -31,6 +33,8 @@
     --track: #44403c;
     --agent: #b294f0;
     --removed: #57534e;
+    --danger: #fca5a5;
+    --danger-bg: rgb(239 68 68 / 0.2);
   }
 }
 
@@ -351,7 +355,7 @@ body {
 }
 
 /* The agent turns slowly while it's working something out or running. */
-.agent-launcher:is([data-view="spotted"], [data-view="running"]) .agent-avatar,
+.agent-dock-bar:is([data-view="spotted"], [data-view="running"]) .agent-avatar,
 .agent-panel:is([data-view="spotted"], [data-view="running"]) .agent-avatar {
   animation: agent-spin 6s linear infinite;
 }
@@ -362,39 +366,78 @@ body {
   }
 }
 
-.agent-launcher {
+.agent-dock {
   position: fixed;
   right: 24px;
   bottom: 24px;
+  z-index: 20;
   display: flex;
-  max-width: min(420px, calc(100vw - 48px));
-  align-items: center;
+  max-width: min(480px, calc(100vw - 48px));
+  flex-direction: column;
+  align-items: flex-end;
   gap: 8px;
-  padding: 10px 16px;
+}
+
+/* One pill: the launcher on the left, the voice controls on the right. */
+.agent-dock-bar {
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.agent-dock-bar[data-view="offer"] {
+  border-color: var(--agent);
+}
+
+/* Long pattern text wraps to two lines, so the pill rounds less. */
+.agent-dock-bar:is([data-view="offer"], [data-view="spotted"]) {
+  border-radius: 24px;
+}
+
+.agent-launcher {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
   color: inherit;
   font: inherit;
   font-weight: 500;
   text-align: left;
   cursor: pointer;
   transition:
-    translate 200ms var(--ease-out),
-    scale 160ms var(--ease-out),
-    opacity 200ms var(--ease-out);
+    background-color 160ms var(--ease-out),
+    scale 160ms var(--ease-out);
+}
+
+.agent-launcher-label {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  transition:
+    opacity 200ms var(--ease-out),
+    translate 200ms var(--ease-out);
 
   @starting-style {
     opacity: 0;
-    translate: 0 6px;
-    scale: 0.97;
+    translate: 0 4px;
   }
 }
 
 @media (hover: hover) and (pointer: fine) {
   .agent-launcher:hover {
-    translate: 0 -1px;
+    background: var(--hover);
   }
 }
 
@@ -402,8 +445,8 @@ body {
   scale: 0.97;
 }
 
-.agent-launcher[data-view="offer"] {
-  border-color: var(--agent);
+.agent-dock-bar:is([data-view="offer"], [data-view="spotted"]) .agent-launcher {
+  border-radius: 20px;
   font-weight: 400;
 }
 
@@ -426,8 +469,9 @@ body {
 
 .agent-panel-header {
   display: flex;
+  min-width: 360px;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 16px 16px 0 20px;
 }
 
@@ -916,18 +960,23 @@ td[data-highlight] {
 
 /* Voice ---------- */
 
-.voice {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  z-index: 20;
+.voice-transcript {
   display: flex;
-  width: max-content;
-  max-width: min(560px, calc(100vw - 32px));
   flex-direction: column;
-  align-items: center;
   gap: 8px;
-  translate: -50% 0;
+}
+
+.agent-dock .voice-transcript {
+  width: 360px;
+  max-width: 100%;
+}
+
+/* In the panel, captions sit at the bottom so they never push the form. */
+.agent-panel > .voice-transcript {
+  min-width: 360px;
+  margin-top: auto;
+  padding: 12px 20px 20px;
+  border-top: 1px solid var(--border);
 }
 
 .voice-captions,
@@ -937,68 +986,182 @@ td[data-highlight] {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
+  overflow-wrap: anywhere;
+  transition:
+    opacity 200ms var(--ease-out),
+    translate 200ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+.agent-dock :is(.voice-captions, .voice-error) {
   box-shadow: var(--shadow);
-  text-align: center;
+}
+
+/* The newest words stay in view: overflow clips from the top. */
+.voice-captions {
+  display: flex;
+  max-height: 96px;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+.voice-captions[data-fading] {
+  opacity: 0;
+  transition-duration: 160ms;
 }
 
 .voice-captions p {
+  flex: none;
   margin: 0;
+  text-wrap: pretty;
 }
 
 .voice-error {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
-.voice-pill {
+.voice-controls {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 8px;
-  padding: 6px 6px 6px 14px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  gap: 4px;
+  padding-left: 8px;
+  transition:
+    opacity 200ms var(--ease-out),
+    translate 200ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    translate: 8px 0;
+  }
 }
 
-.voice-pill[data-status="idle"],
-.voice-pill[data-status="error"] {
-  padding: 6px;
+.agent-dock-bar .voice-controls {
+  border-left: 1px solid var(--border);
 }
 
-.voice-pill[data-status="asleep"] {
+.agent-panel-header .voice-controls,
+.agent-panel-header > .round-button:not(.agent-close) {
+  margin-left: auto;
+}
+
+.agent-close {
+  margin-left: 8px;
+}
+
+.voice-controls[data-status="asleep"] :is(.voice-dot, .voice-status) {
   opacity: 0.6;
 }
 
 .voice-status {
-  min-width: 72px;
+  width: 88px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .voice-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  margin-right: 2px;
   border-radius: 50%;
   background: var(--agent);
+  transition: background-color 200ms var(--ease-out);
 }
 
-.voice-pill[data-status="speaking"] .voice-dot {
+.voice-controls[data-muted] .voice-dot {
+  background: var(--muted);
+  animation: none;
+}
+
+.round-button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--ease-out),
+    color 160ms var(--ease-out),
+    scale 160ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .round-button:hover:not(:disabled) {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  .round-button.voice-end:hover {
+    background: var(--danger-bg);
+    color: var(--danger);
+  }
+}
+
+.round-button:active:not(:disabled) {
+  scale: 0.95;
+}
+
+.round-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.round-button[aria-pressed="true"] {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.round-button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.voice-controls[data-status="speaking"] .voice-dot {
   animation: voice-pulse 900ms ease-in-out infinite alternate;
 }
 
-.voice-pill[data-status="working"] .voice-dot,
-.voice-pill[data-status="connecting"] .voice-dot {
-  animation: voice-pulse 400ms ease-in-out infinite alternate;
+.voice-controls:is([data-status="working"], [data-status="connecting"]) .voice-dot {
+  animation: voice-pulse 700ms ease-in-out infinite alternate;
 }
 
 @keyframes voice-pulse {
   to {
-    scale: 1.5;
+    scale: 1.35;
     opacity: 0.5;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* A steady dot still tells the states apart: full while it talks or works, faint while it listens. */
   .voice-dot {
     animation: none !important;
+    opacity: 0.55;
+  }
+
+  .voice-controls:is([data-status="speaking"], [data-status="working"], [data-status="connecting"]) .voice-dot {
+    opacity: 1;
+  }
+
+  .agent-launcher-label,
+  .voice-controls,
+  .voice-captions,
+  .voice-error {
+    translate: none !important;
+  }
+
+  .round-button:active {
+    scale: none;
   }
 }

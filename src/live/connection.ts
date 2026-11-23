@@ -34,21 +34,26 @@ export async function connectLive(onServerEvent: (event: ServerEvent) => void): 
     };
   });
 
-  const offer = await peer.createOffer();
-  await peer.setLocalDescription(offer);
-  const response = await fetch("/api/session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sdp: offer.sdp }),
-  });
-  const body = (await response.json()) as { sessionId: string; sdp: string } | { error: string };
-  if ("error" in body) {
+  // Release the mic and peer if any later step fails, so the browser's recording indicator goes off.
+  let body: { sessionId: string; sdp: string };
+  try {
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    const response = await fetch("/api/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sdp: offer.sdp }),
+    });
+    const reply = (await response.json()) as { sessionId: string; sdp: string } | { error: string };
+    if ("error" in reply) throw new Error(reply.error);
+    body = reply;
+    await peer.setRemoteDescription({ type: "answer", sdp: body.sdp });
+    await started;
+  } catch (error) {
     micTrack.stop();
     peer.close();
-    throw new Error(body.error);
+    throw error;
   }
-  await peer.setRemoteDescription({ type: "answer", sdp: body.sdp });
-  await started;
 
   return {
     sessionId: body.sessionId,
