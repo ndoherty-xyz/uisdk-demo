@@ -43,7 +43,7 @@ app.post("/api/session", async (c) => {
 
 // Dev only: the voice page echoes its events here so they show in the server log.
 app.post("/api/log", async (c) => {
-  if (isDev) console.log("[voice]", await c.req.text());
+  if (isDev) console.log(`[voice ${new Date().toISOString().slice(11, 23)}]`, await c.req.text());
   return c.body(null, 204);
 });
 

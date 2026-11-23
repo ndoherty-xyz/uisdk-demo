@@ -1,10 +1,19 @@
+import type { HistoryEntry } from "@ui-sdk/react/history";
 import { agent, history, memberIdOfEntry, queryMemberControls } from "../bridge";
 import { fieldIdOfLabel, fields, type FieldId } from "../data/fields";
 import { memberById, members, type Member, type Team } from "../data/members";
 import { readSettings } from "../data/settingsStore";
 import { previewRecipe } from "../preview/usePreview";
 import type { Recipe } from "../recipe/schema";
-import { addRunTurn, readRunStore, startRun, undoEntries } from "../run/runStore";
+import { entryStatus, type KeptEntry } from "../run/revert";
+import {
+  addRunTurn,
+  putBackEntries,
+  readHistoryView,
+  readRunStore,
+  startRun,
+  undoEntries,
+} from "../run/runStore";
 import { findRunTargets } from "../run/useRunner";
 import { format } from "../ui/format";
 import { flashChangedCell, hideGhostCursor, moveGhostCursor } from "../ui/GhostCursor";
@@ -47,12 +56,17 @@ function parseFieldValue(fieldId: FieldId, text: string): string | boolean | und
 /**
  * Function to find people by full or partial name.
  * @param name What the person said, e.g. "Jonah" or "jonah park".
- * @returns An exact full-name match alone, else everyone whose name contains it.
+ * @returns An exact full-name match alone, else everyone whose name contains it, else everyone
+ * with that first name (transcripts often mishear surnames).
  */
 function findMembersByName(name: string): Member[] {
   const spoken = name.trim().toLowerCase();
   const exact = members.filter((member) => member.name.toLowerCase() === spoken);
-  return exact.length > 0 ? exact : members.filter((member) => member.name.toLowerCase().includes(spoken));
+  if (exact.length > 0) return exact;
+  const containing = members.filter((member) => member.name.toLowerCase().includes(spoken));
+  if (containing.length > 0) return containing;
+  const firstName = spoken.split(" ")[0]!;
+  return members.filter((member) => member.name.toLowerCase().split(" ")[0] === firstName);
 }
 
 /**
@@ -68,6 +82,19 @@ function describeMember(member: Member) {
     location: member.location,
     ...Object.fromEntries(Object.entries(settings).map(([fieldId, value]) => [fieldId, format(fieldId as FieldId, value)])),
   };
+}
+
+/** Short ids for history entries ("h1"), so the model can name a change. */
+const shortIdOfEntryId = new Map<string, string>();
+
+/**
+ * Function to get an entry's short id, giving it the next one on first sight.
+ * @param entry The history entry.
+ * @returns e.g. "h12".
+ */
+function shortIdOfEntry(entry: HistoryEntry): string {
+  if (!shortIdOfEntryId.has(entry.id)) shortIdOfEntryId.set(entry.id, `h${shortIdOfEntryId.size + 1}`);
+  return shortIdOfEntryId.get(entry.id)!;
 }
 
 // Tools ----------
@@ -127,12 +154,12 @@ async function setSetting(
 
 /**
  * Function to preview or apply changes to everyone the table shows.
- * @param args The changes and whether the person confirmed.
+ * @param args The changes, people to leave out, and whether the person confirmed.
  * @param runner The runner, for confirmed runs.
  * @returns Counts for a preview, or the run's result.
  */
 async function changeShown(
-  args: { changes: { field: string; value: string }[]; confirm: boolean },
+  args: { changes: { field: string; value: string }[]; exclude_people: string[]; confirm: boolean },
   runner: Runner,
 ): Promise<ToolResult> {
   const steps: Recipe["steps"] = [];
@@ -144,39 +171,140 @@ async function changeShown(
   }
   const { team, location, search } = readTableQuery();
   const audience = [team, location && `in ${location}`, search && `matching “${search}”`].filter(Boolean).join(" ");
-  const recipe: Recipe = { reasoning: "", audience: audience || "everyone", filter: null, steps };
+  const excludedNames = args.exclude_people.flatMap((name) => findMembersByName(name).map((member) => member.name));
+  const recipe: Recipe = {
+    reasoning: "",
+    audience: [audience || "everyone", excludedNames.length > 0 && `except ${excludedNames.join(", ")}`].filter(Boolean).join(" "),
+    filter: excludedNames.length > 0 ? { all: excludedNames.map((name) => ({ attr: "name", op: "neq", value: name })) } : null,
+    steps,
+  };
   const targets = findRunTargets(recipe);
   if (!args.confirm) {
     previewRecipe(recipe);
-    return { shown: readVisibleMembers().length, willChange: targets.length, alreadySet: readVisibleMembers().length - targets.length };
+    return { shown: readVisibleMembers().length, willChange: targets.length, ...(excludedNames.length > 0 && { excluded: excludedNames }) };
   }
   if (targets.length === 0) return { changed: 0, note: "everyone shown already has these values" };
   return runner.runRecipe(recipe);
 }
 
 /**
- * Function to undo the newest run's changes, except some fields.
- * @param args The fields to keep.
+ * Function to explain why an undo or put back left an entry alone, for the voice.
+ * @param keptEntry The kept entry and what changed it afterwards.
+ * @returns Who, which field, and why.
+ */
+function describeKeptEntry({ kept, supersededBy }: KeptEntry) {
+  return {
+    id: shortIdOfEntry(kept),
+    person: memberById.get(memberIdOfEntry(kept))!.name,
+    field: fieldIdOfLabel(kept.label),
+    why:
+      supersededBy.source !== "agent"
+        ? "the person changed it after the agent"
+        : readRunStore().undoEntryIds.has(supersededBy.id)
+          ? "an undo changed it after"
+          : "the agent changed it again later",
+  };
+}
+
+/**
+ * Function to list changes to the table, newest first, with ids the model can undo by.
+ * @param args Optional person, field and turn ("last", "t3") to narrow to.
+ * @returns Up to 30 changes and the last 5 requests.
+ */
+function listChanges(args: { person: string | null; field: string | null; turn: string | null }): ToolResult {
+  const historyView = readHistoryView();
+  const { runs, undoEntryIds } = readRunStore();
+  const turnOfEntryId = new Map(
+    runs.flatMap((run, index) => run.turns.flatMap((turn) => turn.entries.map((entry) => [entry.id, `t${index + 1}`]))),
+  );
+  const turn = args.turn === "last" ? `t${runs.length}` : args.turn;
+  const personIds = args.person ? new Set(findMembersByName(args.person).map((member) => member.id)) : null;
+  const changes = historyView.entries
+    .slice(0, historyView.position)
+    // Undo's own entries show up as their original's "undone" status instead.
+    .filter((entry) => !undoEntryIds.has(entry.id))
+    .filter((entry) => !personIds || personIds.has(memberIdOfEntry(entry)))
+    .filter((entry) => !args.field || fieldIdOfLabel(entry.label) === args.field)
+    .filter((entry) => !turn || turnOfEntryId.get(entry.id) === turn)
+    .reverse()
+    .slice(0, 30)
+    .map((entry) => {
+      const fieldId = fieldIdOfLabel(entry.label);
+      return {
+        id: shortIdOfEntry(entry),
+        turn: turnOfEntryId.get(entry.id),
+        who: entry.source === "agent" ? "agent" : "person",
+        person: memberById.get(memberIdOfEntry(entry))!.name,
+        field: fieldId,
+        from: format(fieldId, entry.previous),
+        to: format(fieldId, entry.value),
+        status: entryStatus(entry, historyView),
+      };
+    });
+  const turns = runs
+    .map((run, index) => ({ id: `t${index + 1}`, request: run.title, changes: run.turns.flatMap((t) => t.entries).length }))
+    .slice(-5);
+  return { changes, turns };
+}
+
+/**
+ * Function to undo or put back the agent's changes, then report each one's result.
+ * @param entries The agent's entries, oldest first.
+ * @param direction "undo" to take them back, "putBack" to re-apply undone ones.
+ * @returns How many changed, and which were kept or skipped, with why.
+ */
+async function revertEntries(entries: HistoryEntry[], direction: "undo" | "putBack"): Promise<ToolResult> {
+  const undoneBefore = readRunStore().undoneEntryIds;
+  const isPending = (entry: HistoryEntry) => (direction === "undo" ? !undoneBefore.has(entry.id) : undoneBefore.has(entry.id));
+  const keptEntries = direction === "undo" ? await undoEntries(entries) : await putBackEntries(entries);
+  const { undoneEntryIds } = readRunStore();
+  const changedCount = entries.filter(
+    (entry) => isPending(entry) && (direction === "undo" ? undoneEntryIds.has(entry.id) : !undoneEntryIds.has(entry.id)),
+  ).length;
+  const skipped = entries
+    .filter((entry) => !isPending(entry))
+    .map((entry) => ({ id: shortIdOfEntry(entry), why: direction === "undo" ? "already undone" : "not undone" }));
+  return {
+    [direction === "undo" ? "undone" : "putBack"]: changedCount,
+    ...(keptEntries.length > 0 && { kept: keptEntries.map(describeKeptEntry) }),
+    ...(skipped.length > 0 && { skipped }),
+  };
+}
+
+/**
+ * Function to undo or put back specific changes by their list_changes ids.
+ * @param args The ids.
+ * @param direction "undo" or "putBack".
+ * @returns The result, plus any ids that aren't the agent's changes.
+ */
+async function revertChangesById(args: { ids: string[] }, direction: "undo" | "putBack"): Promise<ToolResult> {
+  const { undoEntryIds } = readRunStore();
+  const entryIdOfShortId = new Map([...shortIdOfEntryId].map(([entryId, shortId]) => [shortId, entryId]));
+  const wantedEntryIds = new Set(args.ids.map((id) => entryIdOfShortId.get(id)));
+  const entries = history
+    .entries()
+    .filter((entry) => wantedEntryIds.has(entry.id) && entry.source === "agent" && !undoEntryIds.has(entry.id));
+  const unknownIds = args.ids.filter((id) => !entries.some((entry) => shortIdOfEntry(entry) === id));
+  return { ...(await revertEntries(entries, direction)), ...(unknownIds.length > 0 && { notAgentChanges: unknownIds }) };
+}
+
+/**
+ * Function to undo one request's changes, or every request's, except some fields or people.
+ * @param args The turn ("last", "all", "t3") and what to keep.
  * @returns How many changes were undone and which were kept, with why.
  */
-async function undoLastTurn(args: { except_fields: string[] }): Promise<ToolResult> {
-  const newestRun = readRunStore().runs.at(-1);
-  if (!newestRun) return { error: "nothing to undo" };
-  const entries = newestRun.turns
+async function undoTurn(args: { turn: string; except_fields: string[]; except_people: string[] }): Promise<ToolResult> {
+  const { runs } = readRunStore();
+  const runIndex = args.turn === "last" ? runs.length - 1 : Number(args.turn.slice(1)) - 1;
+  const undoneRuns = args.turn === "all" ? runs : runs.slice(runIndex, runIndex + 1);
+  if (undoneRuns.length === 0) return { error: "nothing to undo" };
+  const keptPersonIds = new Set(args.except_people.flatMap((name) => findMembersByName(name).map((member) => member.id)));
+  const entries = undoneRuns
+    .flatMap((run) => run.turns)
+    .filter((turn) => !keptPersonIds.has(turn.member.id))
     .flatMap((turn) => turn.entries)
     .filter((entry) => !args.except_fields.includes(fieldIdOfLabel(entry.label)));
-  const undoneBefore = readRunStore().undoneEntryIds;
-  const keptEntries = await undoEntries(entries);
-  const { undoneEntryIds } = readRunStore();
-  return {
-    request: newestRun.title,
-    undone: entries.filter((entry) => undoneEntryIds.has(entry.id) && !undoneBefore.has(entry.id)).length,
-    kept: keptEntries.map(({ kept, supersededBy }) => ({
-      person: memberById.get(memberIdOfEntry(kept))!.name,
-      field: fieldIdOfLabel(kept.label),
-      why: supersededBy.source === "agent" ? "the agent changed it again later" : "the person changed it after the agent",
-    })),
-  };
+  return { request: args.turn === "all" ? "all requests" : undoneRuns[0]!.title, ...(await revertEntries(entries, "undo")) };
 }
 
 /**
@@ -195,7 +323,10 @@ async function runVoiceTool(name: string, argumentsJson: string, request: VoiceR
     if (name === "show_people") return showPeople(args);
     if (name === "set_setting") return await setSetting(args, request);
     if (name === "change_shown") return await changeShown(args, runner);
-    if (name === "undo_last_turn") return await undoLastTurn(args);
+    if (name === "list_changes") return listChanges(args);
+    if (name === "undo_changes") return await revertChangesById(args, "undo");
+    if (name === "put_back_changes") return await revertChangesById(args, "putBack");
+    if (name === "undo_turn") return await undoTurn(args);
     if (name === "stop") {
       runner.stopRun();
       return { stopping: true };

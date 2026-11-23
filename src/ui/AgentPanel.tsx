@@ -19,7 +19,7 @@ import { readTableQuery, readVisibleMembers, subscribeTableQuery } from "./table
 import { playSound } from "../sounds/sounds";
 import { format } from "./format";
 
-const attributeLabels = { team: "Team", title: "Title", location: "Location" };
+const attributeLabels = { name: "Name", team: "Team", title: "Title", location: "Location" };
 
 // Pieces ----------
 
@@ -41,7 +41,7 @@ function describeClause(clause: Clause): string {
   const { attr } = clause;
   const verb = clause.op === "neq" ? "is not" : "is";
   const values = [clause.value].flat();
-  if (attr === "team" || attr === "title" || attr === "location") {
+  if (attr === "name" || attr === "team" || attr === "title" || attr === "location") {
     return `${attributeLabels[attr]} ${verb} ${values.join(" or ")}`;
   }
   // Settings: show option labels, and "on"/"off" for switches.

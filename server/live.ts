@@ -23,7 +23,7 @@ function sessionConfig(): MediaSessionConfig {
         tools: voiceTools,
         tool_choice: "auto",
         parallel_tool_calls: false,
-        reasoning: { effort: "low" },
+        reasoning: { effort: "medium" },
         max_output_tokens: 800,
       },
     },

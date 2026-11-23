@@ -8,7 +8,7 @@ import type { RecordedChange } from "../record/recording";
 const clauseSchema = z
   .object({
     attr: z
-      .enum(["team", "title", "location", "role", "seat", "deployAlerts", "weeklyDigest"])
+      .enum(["name", "team", "title", "location", "role", "seat", "deployAlerts", "weeklyDigest"])
       .describe("A member attribute, or a setting's current value. Switch settings compare to 'true' or 'false'."),
     op: z.enum(["eq", "neq", "in"]).describe("`in` takes an array of strings; `eq` and `neq` take one string."),
     value: z.union([z.string(), z.array(z.string()).min(1)]),
