@@ -4,7 +4,7 @@ import { fieldIdOfLabel, fields, type FieldId } from "../data/fields";
 import { memberById, members, type Member, type Team } from "../data/members";
 import { readSettings } from "../data/settingsStore";
 import { previewRecipe } from "../preview/usePreview";
-import type { Recipe } from "../recipe/schema";
+import type { Clause, Recipe } from "../recipe/schema";
 import { entryStatus, type KeptEntry } from "../run/revert";
 import {
   addRunTurn,
@@ -153,38 +153,98 @@ async function setSetting(
 }
 
 /**
+ * Function to parse spoken field/value pairs into field values.
+ * @param pairs e.g. `[{ field: "role", value: "Editor" }]`.
+ * @returns The parsed pairs, or an error naming the first bad one.
+ */
+function parseFieldValues(pairs: { field: string; value: string }[]) {
+  const parsed: { field: FieldId; value: string | boolean }[] = [];
+  for (const pair of pairs) {
+    if (!(pair.field in fields)) return { error: `unknown field ${pair.field}` };
+    const value = parseFieldValue(pair.field as FieldId, pair.value);
+    if (value === undefined) return { error: `${pair.value} isn't a value for ${pair.field}` };
+    parsed.push({ field: pair.field as FieldId, value });
+  }
+  return { parsed };
+}
+
+/**
  * Function to preview or apply changes to everyone the table shows.
- * @param args The changes, people to leave out, and whether the person confirmed.
+ * @param args The changes, current values to narrow to, people to leave out, and whether the person confirmed.
  * @param runner The runner, for confirmed runs.
  * @returns Counts for a preview, or the run's result.
  */
 async function changeShown(
-  args: { changes: { field: string; value: string }[]; exclude_people: string[]; confirm: boolean },
+  args: {
+    changes: { field: string; value: string }[];
+    only_where: { field: string; value: string }[];
+    exclude_people: string[];
+    confirm: boolean;
+  },
   runner: Runner,
 ): Promise<ToolResult> {
-  const steps: Recipe["steps"] = [];
-  for (const change of args.changes) {
-    if (!(change.field in fields)) return { error: `unknown field ${change.field}` };
-    const value = parseFieldValue(change.field as FieldId, change.value);
-    if (value === undefined) return { error: `${change.value} isn't a value for ${change.field}` };
-    steps.push({ field: change.field, value } as Recipe["steps"][number]);
-  }
-  const { team, location, search } = readTableQuery();
-  const audience = [team, location && `in ${location}`, search && `matching “${search}”`].filter(Boolean).join(" ");
+  const changes = parseFieldValues(args.changes);
+  if (changes.error) return { error: changes.error };
+  const onlyWhere = parseFieldValues(args.only_where);
+  if (onlyWhere.error) return { error: onlyWhere.error };
   const excludedNames = args.exclude_people.flatMap((name) => findMembersByName(name).map((member) => member.name));
+
+  const { team, location, search } = readTableQuery();
+  const audience = [
+    team ?? "everyone",
+    location && `in ${location}`,
+    search && `matching “${search}”`,
+    onlyWhere.parsed!.length > 0 && `with ${onlyWhere.parsed!.map(({ field, value }) => format(field, value)).join(", ")}`,
+    excludedNames.length > 0 && `except ${excludedNames.join(", ")}`,
+  ];
+  const clauses: Clause[] = [
+    ...onlyWhere.parsed!.map(({ field, value }) => ({ attr: field, op: "eq" as const, value: String(value) })),
+    ...excludedNames.map((name) => ({ attr: "name" as const, op: "neq" as const, value: name })),
+  ];
   const recipe: Recipe = {
     reasoning: "",
-    audience: [audience || "everyone", excludedNames.length > 0 && `except ${excludedNames.join(", ")}`].filter(Boolean).join(" "),
-    filter: excludedNames.length > 0 ? { all: excludedNames.map((name) => ({ attr: "name", op: "neq", value: name })) } : null,
-    steps,
+    audience: audience.filter(Boolean).join(" "),
+    filter: clauses.length > 0 ? { all: clauses } : null,
+    steps: changes.parsed! as Recipe["steps"],
   };
   const targets = findRunTargets(recipe);
   if (!args.confirm) {
     previewRecipe(recipe);
     return { shown: readVisibleMembers().length, willChange: targets.length, ...(excludedNames.length > 0 && { excluded: excludedNames }) };
   }
-  if (targets.length === 0) return { changed: 0, note: "everyone shown already has these values" };
+  if (targets.length === 0) return { changed: 0, note: "no one shown needs these changes" };
   return runner.runRecipe(recipe);
+}
+
+/**
+ * Function to copy the person's latest hand edits on one row to everyone else shown.
+ * @param args People to leave out and whether the person confirmed.
+ * @param runner The runner, for confirmed runs.
+ * @returns Whose row and which values were copied, plus the preview or run result.
+ */
+async function copyMyChanges(args: { exclude_people: string[]; confirm: boolean }, runner: Runner): Promise<ToolResult> {
+  const personEntries = history
+    .entries()
+    .slice(0, history.position())
+    .filter((entry) => entry.source !== "agent");
+  const newestEntry = personEntries.at(-1);
+  if (!newestEntry) return { error: "the person hasn't changed anything by hand" };
+  const member = memberById.get(memberIdOfEntry(newestEntry))!;
+  // The newest value per field on that row, if it's still the current value.
+  const valueOfField = new Map(
+    personEntries
+      .filter((entry) => memberIdOfEntry(entry) === member.id)
+      .map((entry) => [fieldIdOfLabel(entry.label), entry.value as string | boolean]),
+  );
+  const settings = readSettings(member.id);
+  const changes = [...valueOfField]
+    .filter(([fieldId, value]) => settings[fieldId] === value)
+    .map(([fieldId, value]) => ({ field: fieldId, value: format(fieldId, value) }));
+  const result = await changeShown(
+    { changes, only_where: [], exclude_people: [member.name, ...args.exclude_people], confirm: args.confirm },
+    runner,
+  );
+  return { copiedFrom: member.name, changes, ...result };
 }
 
 /**
@@ -208,10 +268,15 @@ function describeKeptEntry({ kept, supersededBy }: KeptEntry) {
 
 /**
  * Function to list changes to the table, newest first, with ids the model can undo by.
- * @param args Optional person, field and turn ("last", "t3") to narrow to.
+ * @param args Optional person, field, turn ("last", "t3") and who made it, to narrow to.
  * @returns Up to 30 changes and the last 5 requests.
  */
-function listChanges(args: { person: string | null; field: string | null; turn: string | null }): ToolResult {
+function listChanges(args: {
+  person: string | null;
+  field: string | null;
+  turn: string | null;
+  who: "agent" | "person" | null;
+}): ToolResult {
   const historyView = readHistoryView();
   const { runs, undoEntryIds } = readRunStore();
   const turnOfEntryId = new Map(
@@ -226,6 +291,7 @@ function listChanges(args: { person: string | null; field: string | null; turn: 
     .filter((entry) => !personIds || personIds.has(memberIdOfEntry(entry)))
     .filter((entry) => !args.field || fieldIdOfLabel(entry.label) === args.field)
     .filter((entry) => !turn || turnOfEntryId.get(entry.id) === turn)
+    .filter((entry) => !args.who || (entry.source === "agent") === (args.who === "agent"))
     .reverse()
     .slice(0, 30)
     .map((entry) => {
@@ -323,6 +389,7 @@ async function runVoiceTool(name: string, argumentsJson: string, request: VoiceR
     if (name === "show_people") return showPeople(args);
     if (name === "set_setting") return await setSetting(args, request);
     if (name === "change_shown") return await changeShown(args, runner);
+    if (name === "copy_my_changes") return await copyMyChanges(args, runner);
     if (name === "list_changes") return listChanges(args);
     if (name === "undo_changes") return await revertChangesById(args, "undo");
     if (name === "put_back_changes") return await revertChangesById(args, "putBack");
