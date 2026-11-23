@@ -26,9 +26,9 @@ async function moveGhostCursor(ref: string, glideMs: number): Promise<void> {
   control.scrollIntoView({ block: "nearest" });
   const rect = control.getBoundingClientRect();
   const target = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  // The first move of a run starts from the agent panel's edge.
-  const panelRect = document.querySelector(".agent-panel")!.getBoundingClientRect();
-  const start = cursorPoint ?? { x: panelRect.left, y: panelRect.top + 160 };
+  // The first move of a run starts from the agent panel's edge, or the launcher when the panel is closed.
+  const originRect = document.querySelector(".agent-panel, .agent-launcher")!.getBoundingClientRect();
+  const start = cursorPoint ?? { x: originRect.left, y: Math.min(originRect.top + 160, originRect.bottom) };
   cursorPoint = target;
 
   clearTimeout(hideTimer);

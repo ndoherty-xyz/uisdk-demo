@@ -8,9 +8,12 @@ import { requestRecipe } from "../recipe/requestRecipe";
 import type { Clause, Recipe } from "../recipe/schema";
 import type { Recording } from "../record/recording";
 import { useNudge } from "../record/useNudge";
+import { runScriptedTurn } from "../run/scriptedTurn";
 import { findRunTargets, useRunner } from "../run/useRunner";
 import agentAvatarUrl from "../assets/agent.png";
+import { useVoiceSession } from "../voice/useVoiceSession";
 import { GhostCursor } from "./GhostCursor";
+import { VoicePill } from "./VoicePill";
 import { RunHistory } from "./RunHistory";
 import { readTableQuery, readVisibleMembers, subscribeTableQuery } from "./tableVirtualizer";
 import { playSound } from "../sounds/sounds";
@@ -78,7 +81,8 @@ function AgentPanel() {
   const [instructionText, setInstructionText] = useState("");
   const [isMaking, setIsMaking] = useState(false);
   const [recipeError, setRecipeError] = useState<string | null>(null);
-  const { runState, runs, runRecipe, stopRun, resetRunner, clearRuns } = useRunner();
+  const { runState, runRecipe, stopRun, resetRunner } = useRunner();
+  const voice = useVoiceSession({ runRecipe, stopRun });
   const { spottedExamples, nudge, dismissNudge } = useNudge(pattern === null && runState.phase === "idle");
   // Counts follow the table's values and filters as they change.
   useSyncExternalStore(subscribeSettings, readSettingsVersion);
@@ -164,6 +168,7 @@ function AgentPanel() {
     return (
       <>
         <GhostCursor />
+        <VoicePill voice={voice} />
         <button
           // Remount on each state, so the change plays its entrance.
           key={view}
@@ -199,6 +204,7 @@ function AgentPanel() {
   return (
     <>
       <GhostCursor />
+      <VoicePill voice={voice} />
       <aside className="agent-panel" aria-label="Agent" data-view={view} data-agent-hidden>
         <header className="agent-panel-header">
           <h2>
@@ -359,7 +365,12 @@ function AgentPanel() {
           )}
         </div>
 
-        <RunHistory runs={runs} isRunning={runState.phase === "running"} onClear={clearRuns} />
+        {import.meta.env.DEV && (
+          <button type="button" className="link-button" onClick={runScriptedTurn}>
+            Scripted turn
+          </button>
+        )}
+        <RunHistory isRunning={runState.phase === "running"} />
       </aside>
     </>
   );
