@@ -21,6 +21,9 @@ import { readTableQuery, readVisibleMembers, scrollToMember, setTableQuery } fro
 
 // What each voice tool does in the page. Every handler returns compact JSON and never throws.
 
+/** Changes to this many people or fewer run without a preview. */
+const autoRunMaxCount = 10;
+
 /** The runner's actions, from `useRunner`. */
 type Runner = {
   runRecipe: (recipe: Recipe) => Promise<{ changedCount: number; failedStepCount: number; stopped: boolean }>;
@@ -171,7 +174,7 @@ function parseFieldValues(pairs: { field: string; value: string }[]) {
 /**
  * Function to preview or apply changes to everyone the table shows.
  * @param args The changes, current values to narrow to, people to leave out, and whether the person confirmed.
- * @param runner The runner, for confirmed runs.
+ * @param runner The runner, for confirmed or small runs.
  * @returns Counts for a preview, or the run's result.
  */
 async function changeShown(
@@ -208,7 +211,8 @@ async function changeShown(
     steps: changes.parsed! as Recipe["steps"],
   };
   const targets = findRunTargets(recipe);
-  if (!args.confirm) {
+  // Small changes run without asking; undo is one sentence away.
+  if (!args.confirm && targets.length > autoRunMaxCount) {
     previewRecipe(recipe);
     return { shown: readVisibleMembers().length, willChange: targets.length, ...(excludedNames.length > 0 && { excluded: excludedNames }) };
   }
@@ -219,7 +223,7 @@ async function changeShown(
 /**
  * Function to copy the person's latest hand edits on one row to everyone else shown.
  * @param args People to leave out and whether the person confirmed.
- * @param runner The runner, for confirmed runs.
+ * @param runner The runner, for confirmed or small runs.
  * @returns Whose row and which values were copied, plus the preview or run result.
  */
 async function copyMyChanges(args: { exclude_people: string[]; confirm: boolean }, runner: Runner): Promise<ToolResult> {

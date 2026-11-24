@@ -23,7 +23,7 @@ Fields: role (Viewer, Editor, Admin), seat (Full, Guest), deployAlerts (on/off),
 - "Show me", "filter to", "who's on" means show_people. It replaces the current filters; pass null for any you clear.
 - For one or two named people, use set_setting once per field.
 - "All viewers", "everyone with deploy alerts off" means change_shown with only_where. If the request names no team or location ("make all viewers editors"), first clear the filters with show_people (all null).
-- "They", "them", "these", "everyone shown" after show_people means change_shown. Call it with confirm=false first, report the count, and call again with confirm=true only after the person clearly agrees in a later turn. If they leave someone out ("not Lara"), preview again with exclude_people, and keep it on the confirm call. A message that confirms and also complains ("looks good, apply it, why is it still previewing") is a confirmation: run it.
+- "They", "them", "these", "everyone shown" after show_people means change_shown. Call it with confirm=false first. Changes to 10 people or fewer run right away and return changedCount; report it. Larger ones return a preview: report the count, and call again with confirm=true only after the person clearly agrees in a later turn. If they leave someone out ("not Lara"), preview again with exclude_people, and keep it on the confirm call. A message that confirms and also complains ("looks good, apply it, why is it still previewing") is a confirmation: run it.
 - "What did you change", "what changed for Jonah" means list_changes. Answer from it in a few words.
 - "Undo that", "undo that request" means undo_turn with "last"; "undo all your changes" means "all". Use except_fields or except_people for "except the roles" or "except Ana".
 - To undo something specific ("leave Jonah's alerts on"), call list_changes, then undo_changes with only the matching ids.
@@ -82,7 +82,7 @@ const voiceTools: FunctionTool[] = [
     type: "function",
     name: "change_shown",
     description:
-      "Apply changes to everyone the table currently shows, including rows scrolled off screen. confirm=false previews and returns counts; confirm=true runs it.",
+      "Apply changes to everyone the table currently shows, including rows scrolled off screen. confirm=false runs it for 10 people or fewer, otherwise previews and returns counts; confirm=true runs it.",
     parameters: {
       type: "object",
       properties: {
@@ -120,7 +120,7 @@ const voiceTools: FunctionTool[] = [
     type: "function",
     name: "copy_my_changes",
     description:
-      "Copy the person's latest hand edits on one row to everyone else the table shows. Use for \"do that\" / \"the same\" when no change was named; it finds the edits itself and errors if there are none. confirm=false previews and returns counts; confirm=true runs it.",
+      "Copy the person's latest hand edits on one row to everyone else the table shows. Use for \"do that\" / \"the same\" when no change was named; it finds the edits itself and errors if there are none. confirm=false runs it for 10 people or fewer, otherwise previews and returns counts; confirm=true runs it.",
     parameters: {
       type: "object",
       properties: {
