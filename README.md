@@ -15,16 +15,23 @@ https://github.com/user-attachments/assets/f73950ba-b60c-403e-901c-57a5ec72fc05
   the same history, marked as the agent's.
 - **Undo.** Because every entry records its source, undoing a run reverts the agent's changes and leaves yours alone,
   even ones made after.
+- **Voice.** Talk to the table with GPT-Live. "Show me design in Mexico City", then edit one row by hand and say "do that
+  for the rest": a tool over the history finds your latest edits and copies them to everyone shown. Changes to 10
+  people or fewer run right away; bigger ones ask first. "Undo that" reverts the agent's changes and keeps yours, and
+  "put back Jade's" re-applies some of them.
 
 ## Running it
 
 ```
 pnpm install
-cp .env.example .env   # add an OpenRouter API key
+cp .env.example .env   # add an OpenRouter API key, and an OpenAI key for voice
 pnpm dev
 ```
 
-The web app runs on Vite, with a small Hono server on :8787 that calls the model through OpenRouter.
+The web app runs on Vite, with a small Hono server on :8787. The server calls the rule model through OpenRouter and
+creates voice sessions with OpenAI: GPT-Live (`LIVE_MODEL`) talks, and hands table work to a Responses model
+(`BACKEND_MODEL`) whose tool calls run in the page. Click the mic in the agent pill to start; add `?debug` to log voice
+events in the console.
 
 ## Checks
 

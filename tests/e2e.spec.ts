@@ -230,6 +230,39 @@ test("Undo row keeps a change the person made after the run and says so", async 
     .toMatchObject({ role: "admin", deployAlerts: true, weeklyDigest: false });
 });
 
+test("a scripted turn's changes undo one by one around a hand edit, and put back re-applies", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".agent-launcher").click();
+  await page.getByRole("button", { name: "Scripted turn" }).click();
+  const runCard = page.locator(".run-card", { hasText: "Scripted turn" });
+  await expect(runCard).toContainText("6 changes");
+  await runCard.click();
+
+  await scrollTableToTop(page);
+  await page.locator('tr[data-member-id="jonah"] [data-slot="select-trigger"]').first().click();
+  await page.getByRole("option", { name: "Admin" }).click();
+  await expect(
+    page.locator(".run-turn", { hasText: "Jonah Park" }).locator(".change-chip", { hasText: "Role" }),
+  ).toContainText("changed since");
+
+  const priyaTurn = page.locator(".run-turn", { hasText: "Priya Raman" });
+  for (const label of ["Deploy alerts", "Weekly digest"]) {
+    await priyaTurn.locator(".change-chip", { hasText: label }).getByRole("button", { name: "Remove" }).click();
+    await expect(priyaTurn.locator(".change-chip", { hasText: label })).toHaveAttribute("data-removed");
+  }
+  await expect
+    .poll(() => rowValues(page, "priya"))
+    .toMatchObject({ role: "editor", deployAlerts: true, weeklyDigest: true });
+  await expect
+    .poll(() => rowValues(page, "jonah"))
+    .toMatchObject({ role: "admin", deployAlerts: false, weeklyDigest: true });
+
+  const alertsChip = priyaTurn.locator(".change-chip", { hasText: "Deploy alerts" });
+  await alertsChip.getByRole("button", { name: "Put back" }).click();
+  await expect(alertsChip).not.toHaveAttribute("data-removed");
+  await expect.poll(() => rowValues(page, "priya")).toMatchObject({ deployAlerts: false, weeklyDigest: true });
+});
+
 test("changing two rows the same way by hand offers to automate it, once", async ({ page }) => {
   const targetCount = runTargetCount(seattleRecipe);
   const requests: unknown[] = [];

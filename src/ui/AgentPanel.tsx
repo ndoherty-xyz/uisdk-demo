@@ -8,15 +8,18 @@ import { requestRecipe } from "../recipe/requestRecipe";
 import type { Clause, Recipe } from "../recipe/schema";
 import type { Recording } from "../record/recording";
 import { useNudge } from "../record/useNudge";
+import { runScriptedTurn } from "../run/scriptedTurn";
 import { findRunTargets, useRunner } from "../run/useRunner";
 import agentAvatarUrl from "../assets/agent.png";
+import { useVoiceSession } from "../voice/useVoiceSession";
 import { GhostCursor } from "./GhostCursor";
+import { VoiceCaptions, VoiceControls } from "./VoiceControls";
 import { RunHistory } from "./RunHistory";
 import { readTableQuery, readVisibleMembers, subscribeTableQuery } from "./tableVirtualizer";
 import { playSound } from "../sounds/sounds";
 import { format } from "./format";
 
-const attributeLabels = { team: "Team", title: "Title", location: "Location" };
+const attributeLabels = { name: "Name", team: "Team", title: "Title", location: "Location" };
 
 // Pieces ----------
 
@@ -38,7 +41,7 @@ function describeClause(clause: Clause): string {
   const { attr } = clause;
   const verb = clause.op === "neq" ? "is not" : "is";
   const values = [clause.value].flat();
-  if (attr === "team" || attr === "title" || attr === "location") {
+  if (attr === "name" || attr === "team" || attr === "title" || attr === "location") {
     return `${attributeLabels[attr]} ${verb} ${values.join(" or ")}`;
   }
   // Settings: show option labels, and "on"/"off" for switches.
@@ -66,8 +69,9 @@ function StepChips({ steps }: { steps: Recipe["steps"] }) {
 // Panel ----------
 
 /**
- * Function to render agent mode: a launcher at the bottom right that surfaces what the agent noticed,
- * and the sidebar it opens, which holds the offer, the rule, the run and past runs as one place.
+ * Function to render agent mode: a launcher at the bottom right that surfaces what the agent noticed
+ * and holds the voice controls, and the sidebar it opens, which holds the offer, the rule, the run,
+ * past runs and the same voice controls as one place.
  * Hidden from the bridge so its own controls never show up in snapshots.
  * @returns The launcher or the sidebar.
  */
@@ -78,7 +82,8 @@ function AgentPanel() {
   const [instructionText, setInstructionText] = useState("");
   const [isMaking, setIsMaking] = useState(false);
   const [recipeError, setRecipeError] = useState<string | null>(null);
-  const { runState, runs, runRecipe, stopRun, resetRunner, clearRuns } = useRunner();
+  const { runState, runRecipe, stopRun, resetRunner } = useRunner();
+  const voice = useVoiceSession({ runRecipe, stopRun });
   const { spottedExamples, nudge, dismissNudge } = useNudge(pattern === null && runState.phase === "idle");
   // Counts follow the table's values and filters as they change.
   useSyncExternalStore(subscribeSettings, readSettingsVersion);
@@ -164,34 +169,46 @@ function AgentPanel() {
     return (
       <>
         <GhostCursor />
-        <button
-          // Remount on each state, so the change plays its entrance.
-          key={view}
-          type="button"
-          className="agent-launcher"
-          data-view={view}
-          data-agent-hidden
-          onClick={() => {
-            setIsOpen(true);
-            if (view === "offer") openNudge();
-          }}
-        >
-          <img className="agent-avatar" src={agentAvatarUrl} alt="" />
-          {view === "idle" && "Agent"}
-          {view === "spotted" && (
-            <span>
-              Noticed a pattern in <strong>{exampleNames(spottedExamples!)}</strong>…
-            </span>
-          )}
-          {view === "offer" && (
-            <span>
-              Noticed a pattern in <strong>{exampleNames(nudge!.examples)}</strong>. <u>Automate?</u>
-            </span>
-          )}
-          {view === "pattern" && "Automate"}
-          {runState.phase === "running" && `Updating ${runState.index + 1} of ${runState.total}`}
-          {runState.phase === "finished" && `Updated ${runState.changedCount}`}
-        </button>
+        <div className="agent-dock" data-agent-hidden>
+          <VoiceCaptions voice={voice} />
+          <div className="agent-dock-bar" data-view={view}>
+            <button
+              type="button"
+              className="agent-launcher"
+              title={
+                view === "spotted"
+                  ? `Noticed a pattern in ${exampleNames(spottedExamples!)}…`
+                  : view === "offer"
+                    ? `Noticed a pattern in ${exampleNames(nudge!.examples)}. Automate?`
+                    : undefined
+              }
+              onClick={() => {
+                setIsOpen(true);
+                if (view === "offer") openNudge();
+              }}
+            >
+              <img className="agent-avatar" src={agentAvatarUrl} alt="" />
+              {/* Remount the label on each state, so the change plays its entrance. */}
+              <span key={view} className="agent-launcher-label">
+                {view === "idle" && "Agent"}
+                {view === "spotted" && (
+                  <>
+                    Noticed a pattern in <strong>{exampleNames(spottedExamples!)}</strong>…
+                  </>
+                )}
+                {view === "offer" && (
+                  <>
+                    Noticed a pattern in <strong>{exampleNames(nudge!.examples)}</strong>. <u>Automate?</u>
+                  </>
+                )}
+                {view === "pattern" && "Automate"}
+                {runState.phase === "running" && `Updating ${runState.index + 1} of ${runState.total}`}
+                {runState.phase === "finished" && `Updated ${runState.changedCount}`}
+              </span>
+            </button>
+            <VoiceControls voice={voice} />
+          </div>
+        </div>
       </>
     );
   }
@@ -204,8 +221,11 @@ function AgentPanel() {
           <h2>
             <img className="agent-avatar" src={agentAvatarUrl} alt="" /> Agent
           </h2>
-          <button type="button" className="icon-button" aria-label="Close agent" onClick={closePanel}>
-            ×
+          <VoiceControls voice={voice} />
+          <button type="button" className="round-button agent-close" aria-label="Close agent" onClick={closePanel}>
+            <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+              <path d="M3 3l8 8M11 3l-8 8" strokeLinecap="round" />
+            </svg>
           </button>
         </header>
 
@@ -359,7 +379,13 @@ function AgentPanel() {
           )}
         </div>
 
-        <RunHistory runs={runs} isRunning={runState.phase === "running"} onClear={clearRuns} />
+        {import.meta.env.DEV && (
+          <button type="button" className="link-button" onClick={runScriptedTurn}>
+            Scripted turn
+          </button>
+        )}
+        <RunHistory isRunning={runState.phase === "running"} />
+        <VoiceCaptions voice={voice} />
       </aside>
     </>
   );

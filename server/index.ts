@@ -1,5 +1,8 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { APIError } from "openai";
+import { createLiveSession } from "./live";
 import type { RecipeRequest, RecipeResponse } from "../src/recipe/schema";
 import { proposeRecipe } from "./model";
 
@@ -22,6 +25,26 @@ app.post("/api/recipe", async (c) => {
 
   const response: RecipeResponse = result.ok ? { recipe: result.recipe, model: result.model } : { error: result.error };
   return c.json(response, result.ok ? 200 : 502);
+});
+
+app.post("/api/session", async (c) => {
+  const { sdp } = await c.req.json<{ sdp: string }>();
+  try {
+    const live = await createLiveSession(sdp);
+    if (isDev) console.log(`live session ${live.session.id}`);
+    return c.json({ sessionId: live.session.id, sdp: live.transport.sdp });
+  } catch (error) {
+    const status = error instanceof APIError && error.status ? error.status : 500;
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("live session failed:", message);
+    return c.json({ error: message }, status as ContentfulStatusCode);
+  }
+});
+
+// Dev only: the voice page echoes its events here so they show in the server log.
+app.post("/api/log", async (c) => {
+  if (isDev) console.log(`[voice ${new Date().toISOString().slice(11, 23)}]`, await c.req.text());
+  return c.body(null, 204);
 });
 
 serve({ fetch: app.fetch, port: 8787 }, (info) => {
