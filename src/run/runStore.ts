@@ -2,6 +2,7 @@ import type { HistoryEntry } from "@ui-sdk/react/history";
 import { agent, history, memberIdOfEntry, queryMemberControls } from "../bridge";
 import { memberById, type Member } from "../data/members";
 import type { Recipe } from "../recipe/schema";
+import { flashChangedCell } from "../ui/GhostCursor";
 import { scrollToMember } from "../ui/tableVirtualizer";
 import { planPutBack, planUndo, type HistoryView, type KeptEntry } from "./revert";
 
@@ -110,13 +111,13 @@ async function setEntryValues(entries: HistoryEntry[], valueKey: "previous" | "v
     // The row may have remounted with new refs, so find its controls again by label.
     const controls = await queryMemberControls(memberById.get(memberId)!.name, memberId);
     const positionBefore = history.position();
-    const result = await agent.act({
-      steps: memberEntries.map((entry) => ({
-        ref: controls.find((control) => control.label === entry.label)!.ref,
-        action: entry.key === "checked" ? "setChecked" : "setValue",
-        args: [entry[valueKey]],
-      })),
-    });
+    const steps = memberEntries.map((entry) => ({
+      ref: controls.find((control) => control.label === entry.label)!.ref,
+      action: entry.key === "checked" ? ("setChecked" as const) : ("setValue" as const),
+      args: [entry[valueKey]],
+    }));
+    const result = await agent.act({ steps });
+    for (const step of steps.slice(0, result.error?.step ?? steps.length)) flashChangedCell(step.ref);
     const madeIds = history
       .entries()
       .slice(positionBefore)
